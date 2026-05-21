@@ -567,8 +567,33 @@ def get_export_preview(job_id: str) -> dict:
     utterances = trepo.get_utterances(job_id)
     participants = trepo.get_participants(job_id)
 
-    # WORKING lines from the canonical renderer.
-    working = render_mod.render_to_dicts(utterances, participants)
+    # Stage S (Wave 13): the structural renderer. Produces Q/A
+    # segmentation, isolated objections, off-record tagging, and
+    # procedural parentheticals. The export layer consumes its output.
+    from backend.stage_s.renderer import render_stage_s
+    stage_s = render_stage_s(utterances, participants)
+
+    # Map Stage S RenderLines into the shape export_render expects.
+    # Off-record lines are suppressed from the export body (their
+    # recess/resume parentheticals already mark the gap); RAW retains
+    # everything, and the Workspace can still surface them.
+    working: list[dict] = []
+    for ln in stage_s.lines:
+        if ln.render_state == "OFF_RECORD" and not ln.procedural:
+            continue
+        if ln.line_type == "parenthetical":
+            lt = "colloquy"
+        elif ln.line_type == "by_line":
+            lt = "colloquy"
+        elif ln.line_type in ("Q", "A", "colloquy", "flagged"):
+            lt = ln.line_type
+        else:
+            lt = "colloquy"
+        working.append({
+            "line_type": lt,
+            "speaker_label": ln.speaker_label,
+            "text": ln.text,
+        })
 
     # Case identity for the header block -- best-effort, blank if absent.
     caption = cause_number = witness = proceedings_date = ""
