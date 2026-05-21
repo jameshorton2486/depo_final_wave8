@@ -417,8 +417,8 @@ def save_participants(job_id: str, participants: list[dict]) -> None:
             conn.execute(
                 "INSERT INTO transcript_participants "
                 "(participant_id, job_id, name, role, speaker_indices, "
-                " is_prefill, sort_order) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " is_prefill, sort_order, name_source, honorific) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     p.get("participant_id") or new_id(),
                     job_id,
@@ -427,6 +427,8 @@ def save_participants(job_id: str, participants: list[dict]) -> None:
                     json.dumps(sorted(set(indices))),
                     1 if p.get("is_prefill") else 0,
                     p.get("sort_order", sort_order),
+                    (p.get("name_source") or "").strip() or None,
+                    (p.get("honorific") or "").strip().upper().rstrip(".") or None,
                 ),
             )
 

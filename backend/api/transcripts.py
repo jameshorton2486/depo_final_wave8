@@ -39,6 +39,7 @@ from backend.models.transcripts import (
     ReadbackMatch,
     ReadbackResult,
     RoleOption,
+    SpeakerMappingApplyResponse,
     SpeakerMappingSaveRequest,
     SpeakerMappingView,
     TranscriptContent,
@@ -50,8 +51,10 @@ from backend.models.transcripts import (
     TranscriptWord,
 )
 from backend.services import speaker_mapping
+from backend.services import correction_trigger
 from backend.transcript import ingest
 from backend.transcript import packet as packet_mod
+from backend.transcript import render as render_mod
 from backend.transcript import repository as trepo
 
 router = APIRouter(prefix="/api/transcripts", tags=["transcripts"])
@@ -266,6 +269,11 @@ def get_speaker_mapping(job_id: str) -> SpeakerMappingView:
         participants = speaker_mapping.prefill_participants(speakers, utterances)
         is_prefill = True
 
+    # Wave 11: deterministic candidate-name dropdown. Built from case
+    # metadata when available; always includes the fixed court-officer
+    # labels so the dropdown is useful even with no parsed NOD.
+    candidate_names = _build_candidate_names_for_job(row)
+
     return SpeakerMappingView(
         job_id=job_id,
         source_filename=row["source_filename"],
@@ -276,17 +284,55 @@ def get_speaker_mapping(job_id: str) -> SpeakerMappingView:
             for r in speaker_mapping.ROLES
         ],
         is_prefill=is_prefill,
+        candidate_names=candidate_names,
     )
+
+
+def _build_candidate_names_for_job(job_row: dict) -> list[str]:
+    """Assemble the Wave 11 candidate-name list for a job.
+
+    Reads case-level NOD metadata when the job is linked to a case. Falls
+    back gracefully to just the fixed court-officer labels. Deterministic;
+    no model call.
+    """
+    nod_metadata: dict = {}
+    reporter_name = None
+    case_id = job_row.get("case_id")
+    if case_id:
+        try:
+            from backend.db import repository as case_repo
+            case = case_repo.get_case(case_id)
+            if case:
+                attorneys = []
+                for a in (case.get("attorneys") or []):
+                    attorneys.append({
+                        "name": a.get("name"),
+                        "honorific": a.get("honorific"),
+                        "role": a.get("role") or "examining_attorney",
+                    })
+                nod_metadata = {
+                    "attorneys": attorneys,
+                    "witness": {"name": case.get("witness_name")},
+                }
+                reporter_name = case.get("reporter_name")
+        except Exception as exc:  # never let metadata lookup break the page
+            logger.warning(f"candidate-names metadata lookup failed: {exc}")
+    return speaker_mapping.build_candidate_names(nod_metadata, reporter_name)
 
 
 @router.put("/jobs/{job_id}/speaker-mapping", response_model=SpeakerMappingView)
 def save_speaker_mapping(
-    job_id: str, payload: SpeakerMappingSaveRequest
+    job_id: str,
+    payload: SpeakerMappingSaveRequest,
+    background_tasks: BackgroundTasks,
 ) -> SpeakerMappingView:
     """Persist the reporter-confirmed speaker mapping for a job.
 
     Saved participants are marked is_prefill=0 -- the reporter has taken
     ownership of the mapping. Roles are validated against the fixed set.
+
+    Wave 11 section 7.1: confirming the mapping auto-triggers the
+    deterministic correction engine in the background -- no user click.
     """
     row = trepo.get_job(job_id)
     if row is None:
@@ -310,12 +356,97 @@ def save_speaker_mapping(
                 "speaker_indices": p.speaker_indices,
                 "is_prefill": 0,  # reporter-confirmed
                 "sort_order": p.sort_order,
+                "name_source": p.name_source,
+                "honorific": p.honorific,
             }
         )
 
     trepo.save_participants(job_id, to_save)
     logger.info(f"Saved speaker mapping for job {job_id}: {len(to_save)} participant(s)")
+
+    # Wave 11 section 7.1: a confirmed mapping auto-triggers the
+    # deterministic correction engine in the background. It is fast,
+    # idempotent, and makes no API calls -- no reason to gate it behind
+    # a click. A missing engine is a no-op (correction_trigger is
+    # defensive).
+    background_tasks.add_task(
+        correction_trigger.run_correction_engine_for_job, job_id
+    )
+
     return get_speaker_mapping(job_id)
+
+
+@router.post(
+    "/jobs/{job_id}/speaker-mapping/apply",
+    response_model=SpeakerMappingApplyResponse,
+)
+def apply_speaker_mapping(
+    job_id: str, payload: SpeakerMappingSaveRequest
+) -> SpeakerMappingApplyResponse:
+    """Wave 11 'Assign Speakers' action.
+
+    1. Persist the participant list (same as PUT).
+    2. Re-render the WORKING transcript from utterances + the new mapping
+       via the canonical backend renderer.
+    3. Re-run the deterministic correction engine if it is present
+       (idempotent -- running it twice equals running it once).
+
+    Returns the re-rendered lines so the Workspace can refresh in place.
+    """
+    row = trepo.get_job(job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+
+    # --- 1. Persist (validates roles, same rules as PUT) --------------
+    to_save: list[dict] = []
+    for p in payload.participants:
+        if not speaker_mapping.is_valid_role(p.role):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown participant role '{p.role}'.",
+            )
+        to_save.append({
+            "participant_id": p.participant_id,
+            "name": p.name,
+            "role": p.role,
+            "speaker_indices": p.speaker_indices,
+            "is_prefill": 0,
+            "sort_order": p.sort_order,
+            "name_source": p.name_source,
+            "honorific": p.honorific,
+        })
+    trepo.save_participants(job_id, to_save)
+
+    # --- 2. Re-render WORKING from the canonical renderer -------------
+    utterances = trepo.get_utterances(job_id)
+    participants = trepo.get_participants(job_id)
+    lines = render_mod.render_working_transcript(utterances, participants)
+    unmapped = sum(1 for ln in lines if ln.flagged)
+
+    # --- 3. Re-run the correction engine if present (idempotent) ------
+    engine_ran = False
+    try:
+        summary = correction_trigger.run_correction_engine_for_job(job_id)
+        engine_ran = summary is not None
+    except Exception as exc:
+        logger.info(f"Correction engine not run for {job_id}: {exc}")
+        engine_ran = False
+
+    logger.info(
+        f"Applied speaker mapping for job {job_id}: "
+        f"{len(to_save)} participant(s), {len(lines)} line(s), "
+        f"{unmapped} unmapped cluster(s)"
+    )
+    return SpeakerMappingApplyResponse(
+        job_id=job_id,
+        participant_count=len(to_save),
+        lines=[ln.to_dict() for ln in lines],
+        unmapped_cluster_count=unmapped,
+        correction_engine_ran=engine_ran,
+    )
 
 
 @router.get("/jobs/{job_id}/packet")

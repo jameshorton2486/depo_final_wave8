@@ -101,6 +101,9 @@ class TranscriptParticipant(BaseModel):
     speaker_indices: list[int] = []
     is_prefill: int = 0
     sort_order: int = 0
+    # Wave 11
+    name_source: Optional[str] = None   # prefill_deterministic | ai_suggested | user_confirmed
+    honorific: Optional[str] = None     # MR | MS | MRS | DR | None
 
 
 class TranscriptContent(BaseModel):
@@ -147,10 +150,25 @@ class SpeakerMappingView(BaseModel):
     participants: list[TranscriptParticipant]
     roles: list[RoleOption]
     is_prefill: bool  # True when `participants` is an unconfirmed first guess
+    candidate_names: list[str] = []  # Wave 11: finished speaker-label dropdown
 
 
 class SpeakerMappingSaveRequest(BaseModel):
     participants: list[TranscriptParticipant]
+
+
+class SpeakerMappingApplyResponse(BaseModel):
+    """Wave 11: response from POST .../speaker-mapping/apply.
+
+    Carries the re-rendered WORKING transcript so the Workspace can
+    refresh in place without a second fetch.
+    """
+
+    job_id: str
+    participant_count: int
+    lines: list[dict]          # rendered WorkingLine dicts
+    unmapped_cluster_count: int
+    correction_engine_ran: bool
 
 
 # --------------------------------------------------------------------

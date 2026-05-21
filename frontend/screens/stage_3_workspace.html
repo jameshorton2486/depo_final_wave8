@@ -48,12 +48,20 @@
                             </div>
                         </div>
 
-                        <!-- Speakers Management list -->
+                        <!-- Speakers Management list (Wave 11: editable participant panel) -->
                         <div class="font-sans">
-                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-2">Speakers & Roles</span>
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-2">Speakers &amp; Roles</span>
                             <div class="space-y-1.5" id="speakersList">
-                                <!-- Filled by JS state -->
+                                <!-- Filled by renderSpeakersList() -->
                             </div>
+                            <button id="addSpeakerBtn" onclick="addSpeakerParticipant()"
+                                class="mt-2 w-full text-[10px] font-semibold text-slate-400 hover:text-cyan-300 border border-dashed border-slate-700 hover:border-cyan-500/60 rounded-lg py-1.5 transition-all">
+                                + Add speaker
+                            </button>
+                            <button id="assignSpeakersBtn" onclick="applySpeakerAssignments()" disabled
+                                class="mt-1.5 w-full text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 rounded-lg py-2 transition-all">
+                                Assign speakers &amp; re-render
+                            </button>
                         </div>
 
                         <!-- Correction Memory: Real-time learned values -->

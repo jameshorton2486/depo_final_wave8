@@ -305,6 +305,10 @@
         saveSpeakerMapping(jobId, participants) {
             return _fetch('PUT', `/transcripts/jobs/${encodeURIComponent(jobId)}/speaker-mapping`, { participants });
         },
+        applySpeakerMapping(jobId, participants) {
+            // Wave 11: persist + re-render WORKING transcript + re-run engine.
+            return _fetch('POST', `/transcripts/jobs/${encodeURIComponent(jobId)}/speaker-mapping/apply`, { participants });
+        },
         getTranscriptRawPacket(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/raw`);
         },

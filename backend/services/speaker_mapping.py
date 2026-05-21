@@ -75,6 +75,161 @@ def is_valid_role(role: Optional[str]) -> bool:
 
 
 # --------------------------------------------------------------------
+# Wave 11: speaker label formatting
+# --------------------------------------------------------------------
+# A speaker label is the exact string printed in the transcript for a
+# participant. Two forms (spec wave11 section 6.1):
+#   - attorneys / witness : "{HONORIFIC}. {SURNAME}"  e.g. "MR. NUNEZ"
+#       all-caps, exactly one space after the honorific period.
+#   - court officers      : a fixed "THE ..." label, no name.
+# This builder is the single authority for both the candidate-name
+# dropdown and the transcript renderer, so the two cannot diverge.
+
+VALID_HONORIFICS: tuple[str, ...] = ("MR", "MS", "MRS", "DR")
+
+# Roles that take a "{HONORIFIC}. {SURNAME}" label.
+_NAMED_LABEL_ROLES: frozenset[str] = frozenset({
+    "examining_attorney", "witness", "defending_attorney", "co_counsel",
+})
+
+# Roles that take a fixed court-officer label, no name.
+_COURT_OFFICER_LABELS: dict[str, str] = {
+    "court_reporter": "THE REPORTER",       # never "THE COURT REPORTER"
+    "videographer": "THE VIDEOGRAPHER",
+    "interpreter": "THE INTERPRETER",
+}
+
+
+def _surname_of(name: Optional[str]) -> str:
+    """Extract the surname (last whitespace-delimited token) from a name."""
+    if not name:
+        return ""
+    cleaned = name.strip().rstrip(",.").strip()
+    if not cleaned:
+        return ""
+    # If already an all-caps single token, take it as the surname.
+    return cleaned.split()[-1]
+
+
+def participant_label(
+    role: Optional[str],
+    name: Optional[str],
+    honorific: Optional[str] = None,
+) -> str:
+    """Build the deterministic speaker label for a participant.
+
+    Returns the finished, transcript-ready label string. Empty string when
+    there is not enough information yet (e.g. a named role with no surname,
+    or a named role missing its honorific) -- the caller treats an empty
+    label as "not finalised".
+
+    This is spec wave11 section 6.1 and the engine's STD-SPK-01/02.
+    """
+    role = (role or "").strip()
+
+    # Court officers -- fixed label, ignore name/honorific entirely.
+    if role in _COURT_OFFICER_LABELS:
+        return _COURT_OFFICER_LABELS[role]
+
+    # Named roles -- "{HONORIFIC}. {SURNAME}", all-caps, one space.
+    if role in _NAMED_LABEL_ROLES:
+        surname = _surname_of(name).upper()
+        hon = (honorific or "").strip().upper().rstrip(".")
+        if not surname:
+            return ""
+        if hon not in VALID_HONORIFICS:
+            return ""  # not finalised until honorific is set
+        return f"{hon}. {surname}"
+
+    # off_record / other -- no standardized label form.
+    if name:
+        return name.strip().upper()
+    return ""
+
+
+def build_candidate_names(
+    nod_metadata: Optional[dict] = None,
+    reporter_name: Optional[str] = None,
+    confirmed_spellings: Optional[dict] = None,
+) -> list[str]:
+    """Build the deterministic dropdown of finished speaker labels.
+
+    Reads parsed NOD metadata (attorneys + witness) and the assigned
+    reporter, passes each through participant_label(), and returns the
+    de-duplicated list of label strings the Workspace name dropdown offers.
+
+    No model call -- this is a read of already-parsed data plus the
+    role-to-label rule. spec wave11 section 4.3 / 10.3.
+    """
+    labels: list[str] = []
+    seen: set[str] = set()
+
+    def _add(label: str) -> None:
+        if label and label not in seen:
+            seen.add(label)
+            labels.append(label)
+
+    meta = nod_metadata or {}
+
+    # Attorneys from the NOD parser. Each entry may carry name + honorific.
+    for atty in (meta.get("attorneys") or []):
+        role = atty.get("role") or "examining_attorney"
+        if role not in _NAMED_LABEL_ROLES:
+            role = "examining_attorney"
+        _add(participant_label(role, atty.get("name"), atty.get("honorific")))
+
+    # Witness from the NOD parser.
+    witness = meta.get("witness") or {}
+    if witness.get("name"):
+        _add(participant_label("witness", witness.get("name"),
+                               witness.get("honorific")))
+
+    # Court officers -- always offered; fixed labels.
+    _add(participant_label("court_reporter", reporter_name))
+    _add(participant_label("videographer", None))
+    _add(participant_label("interpreter", None))
+
+    return labels
+
+
+# --------------------------------------------------------------------
+# Wave 11: deterministic name prefill from appearance statements
+# --------------------------------------------------------------------
+# Appearance statements follow a recognisable pattern at the top of a
+# deposition: "{NAME} for the {defendant|plaintiff}...". A deterministic
+# regex can read the first utterance of a cluster and, on a match,
+# pre-select a name. Best-effort only -- never overrides a user choice,
+# never guesses outside the pattern. spec wave11 section 4.4.
+
+import re as _re
+
+_APPEARANCE_RE = _re.compile(
+    r"^\s*(?P<name>[A-Z][A-Za-z.''\-]+(?:\s+[A-Z][A-Za-z.''\-]+){0,3})\s+"
+    r"for\s+the\s+(?:defendant|plaintiff|deponent|witness)",
+    _re.IGNORECASE,
+)
+
+
+def prefill_name_from_appearance(first_utterance_text: Optional[str]) -> Optional[str]:
+    """Return a name parsed from an appearance-statement utterance, or None.
+
+    Deterministic and best-effort: matches only the well-known
+    '{name} for the {party}' pattern. Anything else returns None and the
+    dropdown opens unselected.
+    """
+    if not first_utterance_text:
+        return None
+    m = _APPEARANCE_RE.match(first_utterance_text.strip())
+    if not m:
+        return None
+    name = m.group("name").strip()
+    # Reject single-token false positives like "Appearing for the..."
+    if len(name.split()) < 2:
+        return None
+    return name
+
+
+# --------------------------------------------------------------------
 # Text signals for the deterministic prefill
 # --------------------------------------------------------------------
 # Phrases only the court reporter says when going on/off the record and

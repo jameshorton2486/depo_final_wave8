@@ -75,6 +75,11 @@ def apply() -> int:
         _ensure_column(conn, "sessions", "requesting_party_name", "TEXT")
         _ensure_column(conn, "reporters", "firm_registration_number", "TEXT")
 
+        # Wave 11: Workspace Speaker Panel — participant name provenance
+        # and honorific. Idempotent; safe on databases created at v3.
+        _ensure_column(conn, "transcript_participants", "name_source", "TEXT")
+        _ensure_column(conn, "transcript_participants", "honorific", "TEXT")
+
         version_after = current_version(conn)
         logger.info(f"DB schema version after apply: {version_after}")
         return version_after
