@@ -309,6 +309,14 @@
             // Wave 11: persist + re-render WORKING transcript + re-run engine.
             return _fetch('POST', `/transcripts/jobs/${encodeURIComponent(jobId)}/speaker-mapping/apply`, { participants });
         },
+        getExportPreview(jobId) {
+            // Wave 12: canonical paginated export document for a saved job.
+            return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/export-preview`);
+        },
+        getExportPreviewFallback(payload) {
+            // Wave 12: export preview for a transient unsaved transcript.
+            return _fetch('POST', '/transcripts/export-preview/fallback', payload);
+        },
         getTranscriptRawPacket(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/raw`);
         },

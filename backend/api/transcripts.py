@@ -55,6 +55,7 @@ from backend.services import correction_trigger
 from backend.transcript import ingest
 from backend.transcript import packet as packet_mod
 from backend.transcript import render as render_mod
+from backend.transcript import export_render as export_render_mod
 from backend.transcript import repository as trepo
 
 router = APIRouter(prefix="/api/transcripts", tags=["transcripts"])
@@ -536,3 +537,104 @@ def readback_search(payload: ReadbackRequest) -> ReadbackResult:
         matches=[ReadbackMatch(**r) for r in rows],
         count=len(rows),
     )
+
+
+# ====================================================================
+# Export preview  (Wave 12) -- canonical "what will export" rendering
+# ====================================================================
+
+
+@router.get("/jobs/{job_id}/export-preview")
+def get_export_preview(job_id: str) -> dict:
+    """Render the canonical paginated export document for one job.
+
+    This is the SAME pipeline the real DOCX/PDF export uses:
+
+        RAW -> participant mapping -> render.py (WORKING lines)
+            -> export_render.py (paginated layout)
+
+    The Export screen's "Refresh Preview" button calls this, so the
+    preview always reflects the current WORKING transcript state --
+    speaker mapping, Q/A typing, and (as later waves land) corrections.
+    """
+    row = trepo.get_job(job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+
+    utterances = trepo.get_utterances(job_id)
+    participants = trepo.get_participants(job_id)
+
+    # WORKING lines from the canonical renderer.
+    working = render_mod.render_to_dicts(utterances, participants)
+
+    # Case identity for the header block -- best-effort, blank if absent.
+    caption = cause_number = witness = proceedings_date = ""
+    examining_label = ""
+    case_id = row.get("case_id")
+    if case_id:
+        try:
+            from backend.db import repository as case_repo
+            case = case_repo.get_case(case_id)
+            if case:
+                caption = case.get("caption_full") or ""
+                cause_number = case.get("case_number_value") or ""
+        except Exception as exc:
+            logger.warning(f"export-preview case lookup failed: {exc}")
+
+    # Examining attorney label from the confirmed participants.
+    for p in participants:
+        if p.get("role") == "examining_attorney":
+            examining_label = speaker_mapping.participant_label(
+                "examining_attorney", p.get("name"), p.get("honorific"))
+            break
+    # Witness name from the confirmed participants.
+    for p in participants:
+        if p.get("role") == "witness" and p.get("name"):
+            witness = p.get("name")
+            break
+
+    doc = export_render_mod.render_export_document(
+        working,
+        caption=caption,
+        cause_number=cause_number,
+        witness=witness,
+        proceedings_date=proceedings_date,
+        examining_attorney_label=examining_label,
+        is_approximate=False,
+    )
+    return doc.to_dict()
+
+
+class ExportPreviewFallbackRequest(BaseModel):
+    """Frontend-fallback payload: render an export preview from
+    transient WORKING lines that are not yet saved to a job."""
+
+    lines: list[dict] = Field(default_factory=list)
+    caption: str = ""
+    cause_number: str = ""
+    witness: str = ""
+    proceedings_date: str = ""
+    examining_attorney_label: str = ""
+
+
+@router.post("/export-preview/fallback")
+def post_export_preview_fallback(payload: ExportPreviewFallbackRequest) -> dict:
+    """Render an export preview from frontend-supplied WORKING lines.
+
+    Used only when the transcript is not yet a saved job. The result is
+    marked is_approximate=True so the UI can label it clearly. The
+    long-term authority is the job-based endpoint above.
+    """
+    doc = export_render_mod.render_export_document(
+        payload.lines,
+        caption=payload.caption,
+        cause_number=payload.cause_number,
+        witness=payload.witness,
+        proceedings_date=payload.proceedings_date,
+        examining_attorney_label=payload.examining_attorney_label,
+        is_approximate=True,
+    )
+    return doc.to_dict()

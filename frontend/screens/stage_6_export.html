@@ -52,44 +52,34 @@
                 </div>
             </div>
 
-            <!-- Pre-rendered MS Word A4 sheet mockup -->
+            <!-- Live export preview — canonical "what will export" view (Wave 12) -->
             <div class="w-full md:w-[480px] bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between shadow-xl shrink-0">
                 <div>
-                    <h3 class="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3 flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
-                        Sealed Transcript Layout Preview (DOCX)
-                    </h3>
-                    <p class="text-xs text-slate-400 mb-4 leading-relaxed">Page representation compiled specifically to preserve double spacing and side rules upon copy-paste or export.</p>
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-xs font-bold uppercase tracking-widest text-indigo-400 flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+                            Sealed Transcript Layout Preview
+                        </h3>
+                        <button onclick="refreshExportPreview()" id="refreshPreviewBtn"
+                            class="text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg px-2.5 py-1 transition-all">
+                            ⟳ Refresh Preview
+                        </button>
+                    </div>
+                    <p class="text-xs text-slate-400 mb-2 leading-relaxed">Rendered from the current WORKING transcript by the same pipeline that produces the export file — speaker mapping, Q/A typing, and corrections all reflected.</p>
+                    <p id="previewStatusLine" class="text-[10px] text-slate-500 mb-3 font-mono">Click "Refresh Preview" to render the current transcript.</p>
 
-                    <div class="ms-word-page text-slate-800 border border-slate-200 p-8 h-[380px] overflow-y-auto select-none relative shadow-inner">
-                        <!-- Watermark -->
-                        <div class="absolute inset-0 flex items-center justify-center opacity-[0.04] pointer-events-none transform -rotate-45 text-2xl font-bold text-red-600 tracking-widest">
+                    <div class="ms-word-page text-slate-800 border border-slate-200 p-8 h-[380px] overflow-y-auto select-none relative shadow-inner bg-white">
+                        <div id="exportPreviewWatermark" class="absolute inset-0 flex items-center justify-center opacity-[0.04] pointer-events-none transform -rotate-45 text-2xl font-bold text-red-600 tracking-widest">
                             CERTIFIED TRANSCRIPT
                         </div>
-                        <p class="text-center font-bold text-slate-600 text-[10px] mb-2 font-mono">PAGE 1</p>
-                        <p class="text-center text-slate-400 text-[9px] border-b border-slate-100 pb-2 mb-2 font-mono">SARAH JENKINS vs. NEXUS PHARMA INC.</p>
-
-                        <div class="flex gap-4 font-mono text-[9px] leading-5">
-                            <div class="text-slate-400 text-right w-4 border-r border-red-200 pr-2">
-                                1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15
-                            </div>
-                            <div class="flex-1 space-y-1 text-slate-700">
-                                <p class="text-[8px] text-slate-400 uppercase">PROCEEDINGS, TUESDAY, MAY 19, 2026</p>
-                                <p>DR. DONALD LEIFER, testified as follows:</p>
-                                <p class="font-bold text-slate-800">EXAMINATION BY MR. RICHARD VANCE:</p>
-                                <p class="pl-4">Q.  State your full name and credentials for the record.</p>
-                                <p class="pl-4">A.  Dr. Donald Leifer, specialized Neurosurgeon at</p>
-                                <p class="pl-4">MD Medical Group, Houston Texas.</p>
-                                <p class="pl-4">Q.  Did you examine Sarah Jenkins prior to the procedure?</p>
-                                <p class="pl-4">A.  Yes, the Acoustic Neuroma scans were taken</p>
-                                <p class="pl-4">on the afternoon of October 12th.</p>
-                            </div>
+                        <div id="exportPreviewBody" class="relative">
+                            <p class="text-center text-slate-400 text-[10px] font-mono py-20">No preview rendered yet.</p>
                         </div>
                     </div>
                 </div>
 
-                <div class="bg-emerald-950/40 p-3.5 rounded-xl border border-emerald-500/20 mt-4 text-center">
-                    <p class="text-xs text-emerald-300 font-bold">✓ Case Bundle Sealed Safe & Ready</p>
+                <div id="exportPreviewSeal" class="bg-slate-800/40 p-3.5 rounded-xl border border-slate-700/40 mt-4 text-center">
+                    <p class="text-xs text-slate-400 font-bold">Preview not yet generated</p>
                 </div>
             </div>
         </div>
