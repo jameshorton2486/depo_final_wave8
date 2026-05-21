@@ -1,0 +1,125 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.Python
+*.egg-info/
+
+# =========================
+# IDE / Editors
+# =========================
+.idea/
+.vscode/
+
+# =========================
+# Node
+# =========================
+node_modules/
+
+# =========================
+# PyWebView
+# =========================
+*.webview
+
+# =========================
+# Operating System
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Build / Distribution
+# =========================
+dist/
+build/
+.cache/
+
+# =========================
+# Project Output / Temp
+# =========================
+output/
+temp/
+cache/
+tmp/
+
+# =========================
+# FFmpeg / Audio Temp
+# =========================
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.flac
+*.aac
+
+# =========================
+# Logs
+# =========================
+*.log
+npm-debug.log*
+
+# =========================
+# SQLite / User Data
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+
+data/cases/*
+!data/cases/.gitkeep
+
+data/sqlite/*.db
+data/sqlite/*.db-journal
+data/sqlite/*.db-wal
+data/sqlite/*.db-shm
+
+data/.sqlite3
+data/.sqlite3-journal
+data/.sqlite3-wal
+data/.sqlite3-shm
+
+data/depo_pro.sqlite3
+data/depo_pro.sqlite3-journal
+data/depo_pro.sqlite3-wal
+data/depo_pro.sqlite3-shm
+
+# =========================
+# Secrets / Environment
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Claude / AI tooling
+# =========================
+.claude/
+
+# =========================
+# Personal scratch files
+# =========================
+MY_CHEATS.txt
+
+# =========================
+# Testing / Pytest
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =========================
+# Misc
+# =========================
+*.tmp
+*.bak
+*.old

@@ -1,0 +1,248 @@
+        <div id="stagePanel2" class="stage-panel flex-1 flex flex-col xl:flex-row p-6 gap-6 overflow-y-auto">
+            <!-- Left Side: Double Ingestion Workspace (Live and Pre-recorded Panels side by side/stacked) -->
+            <div class="flex-1 flex flex-col gap-6">
+
+                <!-- SECTION A: LIVE TRANSCRIPT USING ZOOM -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                            <h3 class="text-md font-bold text-white flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse"></span>
+                                Live Transcript Using Zoom
+                            </h3>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/40 font-mono font-bold uppercase tracking-wider">Simulation</span>
+                                <span class="text-xs text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 font-mono">Deepgram Realtime Stream</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                            <div>
+                                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Zoom Meeting ID</label>
+                                <input id="zoomMeetingId" type="text" value="" placeholder="000-0000-0000" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-red-500 font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Zoom Passcode</label>
+                                <input id="zoomPasscode" type="password" value="" placeholder="Meeting passcode" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-red-500 font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Hardware Capture Input</label>
+                                <select id="audioDeviceSelect" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-red-500 font-sans">
+                                    <option>Internal Audio Driver (Default)</option>
+                                    <option>External Stenomask USB Feed</option>
+                                    <option>Virtual Zoom Audio Bridge</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Signal Diagnostics</label>
+                                <button onclick="testGainAndAudio()" class="w-full bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-indigo-400 font-semibold transition-all">
+                                    Test Input Level
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Real-time Input Signal db level meter -->
+                        <div id="liveGainContainer" class="mb-4 bg-slate-950 px-4 py-2.5 rounded-lg border border-slate-850 hidden animate-slide-in">
+                            <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono mb-1">
+                                <span class="flex items-center gap-1"><span id="micDiagnosticLevel" class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Signal Status: Locked</span>
+                                <span id="dbValueLabel">-32 dB Gain</span>
+                            </div>
+                            <div class="w-full bg-slate-900 h-2 rounded overflow-hidden flex gap-0.5">
+                                <div id="gainLevelFill" class="bg-gradient-to-r from-emerald-500 via-amber-500 to-red-500 h-full w-[45%] transition-all duration-100"></div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-slate-950 p-4 rounded-xl border border-slate-850">
+                            <!-- SVG Waveform -->
+                            <div class="md:col-span-2 flex justify-center">
+                                <div class="w-16 h-16 rounded-full border-2 border-slate-800 flex items-center justify-center bg-slate-900/80 relative overflow-hidden" id="streamingVisualCircle">
+                                    <div id="liveStreamWaveGlow" class="absolute inset-0 bg-red-500/10 blur-sm rounded-full opacity-0"></div>
+                                    <svg id="audioVisualizerSvg" class="w-10 h-10 text-slate-500" viewBox="0 0 100 100">
+                                        <circle cx="50" cy="50" r="30" fill="none" stroke="currentColor" stroke-width="4" id="visualizerCoreRing"></circle>
+                                        <path d="M50,20 L50,80 M35,30 L35,70 M65,30 L65,70" stroke="currentColor" stroke-width="4" stroke-linecap="round" id="visualizerBars"></path>
+                                    </svg>
+                                </div>
+                            </div>
+
+                            <!-- Actions/Status text -->
+                            <div class="md:col-span-10 text-center md:text-left">
+                                <div class="flex items-center justify-center md:justify-start gap-2 mb-1">
+                                    <span id="zoomStatusHeader" class="text-xs font-bold text-slate-400">Stream Disconnected</span>
+                                    <span id="liveTimestamp" class="text-[10px] font-mono text-slate-500 bg-slate-900 px-1.5 py-0.2 rounded border border-slate-800 hidden">00:00:00</span>
+                                </div>
+                                <p class="text-[11px] text-slate-500 mb-3 leading-relaxed">Live Zoom RTMS → Deepgram streaming is architected but not yet wired to a real socket. This panel runs a faithful UI simulation of the streaming experience. Pre-recorded ingestion below is fully live.</p>
+
+                                <div class="flex gap-2 justify-center md:justify-start">
+                                    <button onclick="startZoomStreaming()" id="btnStartStream" class="px-3.5 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1">
+                                        <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>Connect & Stream
+                                    </button>
+                                    <button onclick="stopZoomStreaming()" id="btnStopStream" disabled class="px-3.5 py-1.5 bg-slate-800 text-slate-500 text-xs font-bold rounded-lg transition-all" style="opacity:0.5">Disconnect</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Live Text Viewport -->
+                        <div class="mt-3 bg-slate-950 border border-slate-850 rounded-xl p-3">
+                            <div class="h-28 overflow-y-auto pr-1 font-mono text-xs space-y-1.5 text-slate-400" id="liveStreamTextContainer">
+                                <p class="text-slate-600 italic text-center py-8">WebSocket stream idle. Awaiting connect sequence.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION B: PRE-RECORDED FILE BATCH TRANSCRIBE (Chronological Sequence Queue) -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex-1 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                            <h3 class="text-md font-bold text-white flex items-center gap-2">
+                                <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
+                                Pre-recorded Media File Transcripts
+                            </h3>
+                            <div class="flex items-center gap-2">
+                                <span id="engineModeBadge" class="text-[10px] text-slate-500 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 font-mono">Checking engine…</span>
+                                <span class="text-xs text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 font-mono">Sequential Ingest Queue</span>
+                            </div>
+                        </div>
+
+                        <!-- Pre-Ingest Parameters Map -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4 p-3 bg-slate-950 rounded-xl border border-slate-850">
+                            <div>
+                                <label class="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Deepgram Model</label>
+                                <select id="modelSelect" class="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[11px] text-white">
+                                    <option value="legal" selected>Nova-3 Legal Pro</option>
+                                    <option value="general">Nova-3 General</option>
+                                    <option value="medical">Nova-3 Medical Specialized</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Expected Speakers</label>
+                                <select id="speakerCount" class="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[11px] text-white">
+                                    <option value="auto">Auto-Diarize (Default)</option>
+                                    <option value="2">2 Speakers (Single Deponent)</option>
+                                    <option value="3">3 Speakers (Deponent + Counsel)</option>
+                                    <option value="4">4 Speakers (Deponent + Multi-Counsel)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1">Acoustic Assessment</label>
+                                <div class="text-[10px] text-emerald-400 font-semibold flex items-center h-6 gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span> SNR Check: Good
+                                </div>
+                            </div>
+                        </div>
+
+                        <p class="text-xs text-slate-400 mb-4 leading-relaxed font-sans">
+                            Upload **one or more audio and video files** in chronological order (e.g. morning session, afternoon session, redirect clip). Deepgram's Nova-3 engine will process them sequentially and compile them into a single continuous transcript layer.
+                        </p>
+
+                        <!-- Batch Drop Area -->
+                        <div class="border border-dashed border-slate-800 hover:border-indigo-500/50 rounded-xl p-4 text-center bg-slate-950/40 transition-all cursor-pointer mb-4" onclick="triggerFileInput('batchAudioInputs')">
+                            <input id="batchAudioInputs" type="file" multiple class="hidden" accept="audio/*,video/*" onchange="addFilesToIngestionQueue(this)">
+                            <div class="flex justify-center mb-1">
+                                <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            </div>
+                            <span class="text-xs font-semibold text-slate-300">Add Audio/Video Files to Ingestion Sequence</span>
+                        </div>
+
+                        <!-- Sequence Queue List (Enhanced with Move Controls) -->
+                        <div class="space-y-2 max-h-40 overflow-y-auto pr-1 mb-4" id="sequentialQueueList">
+                            <p class="text-xs text-slate-600 italic text-center py-4 bg-slate-950/40 rounded-xl border border-slate-850">In-order queue is empty. Drag or browse files above.</p>
+                        </div>
+
+                        <!-- Enhanced Double-Action Progress Diagnostic Center -->
+                        <div class="bg-slate-950 rounded-xl p-4 border border-slate-850 mb-3 hidden" id="sequentialProgressBar">
+                            <div class="flex items-center justify-between text-[11px] font-mono text-slate-300 mb-2">
+                                <span id="queueProgressLabel" class="font-bold">Ingesting File 1 of 2...</span>
+                                <span id="queueProgressPercent" class="text-indigo-400 font-bold">0%</span>
+                            </div>
+                            <div class="w-full bg-slate-900 h-2.5 rounded-full overflow-hidden mb-3 border border-slate-800">
+                                <div id="queueProgressFill" class="bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500 h-full w-0 transition-all duration-200"></div>
+                            </div>
+                            <!-- Queue Metrics Grid (Estimated remaining time visualizer) -->
+                            <div class="grid grid-cols-3 gap-2 text-[10px] font-mono text-slate-500 pt-2 border-t border-slate-900">
+                                <div>
+                                    <span class="block text-slate-600">TIME ELAPSED</span>
+                                    <span id="statTimeElapsed" class="text-slate-300">0.0s</span>
+                                </div>
+                                <div class="text-center">
+                                    <span class="block text-slate-600">TIME REMAINING (EST)</span>
+                                    <span id="statTimeRemaining" class="text-emerald-400 font-bold">Calculating...</span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="block text-slate-600">REAL-TIME SPEED</span>
+                                    <span id="statSpeedRatio" class="text-indigo-400">8.4x Real-Time</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sequential Progressive Log Console -->
+                        <div class="bg-slate-950 border border-slate-850 rounded-xl p-3 text-left font-mono text-[10px] text-slate-500 space-y-1 max-h-24 overflow-y-auto hidden" id="sequentialLogs">
+                        </div>
+                    </div>
+
+                    <div class="pt-4 border-t border-slate-800 flex justify-between items-center">
+                        <button onclick="clearAllQueues()" class="text-xs text-red-500 hover:text-red-400 font-semibold transition-all">Reset Files Queue</button>
+                        <button onclick="startSequentialIngestion()" id="btnIngestQueue" disabled class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white rounded-xl text-xs font-bold transition-all shadow-md">
+                            Process Sequence Queue in Order
+                        </button>
+                    </div>
+                </div>
+
+                <!-- SECTION C: PERSISTED TRANSCRIPT SESSIONS (server-backed job cards) -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl shrink-0">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                        <h3 class="text-md font-bold text-white flex items-center gap-2">
+                            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
+                            Persisted Transcript Sessions
+                        </h3>
+                        <button onclick="refreshServerTranscriptJobs()" class="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold transition-all">Refresh</button>
+                    </div>
+                    <p class="text-xs text-slate-400 mb-4 leading-relaxed font-sans">
+                        Every ingested file is stored as an immutable raw transcript packet plus an editable working layer. Open a completed session to load it into the Stage 3 Workspace.
+                    </p>
+                    <div class="space-y-2 max-h-72 overflow-y-auto pr-1" id="serverJobsList">
+                        <p class="text-xs text-slate-600 italic text-center py-6 font-sans">No transcripts ingested yet. Process a media file above.</p>
+                    </div>
+                </div>
+
+                <!-- Footer Nav Controls -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex justify-between items-center shrink-0">
+                    <button onclick="goToStage(1)" class="text-slate-400 hover:text-white text-xs font-semibold font-mono">◀ Stage 1: Case Intake</button>
+                    <button onclick="goToStage(3)" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-1">
+                        Proceed to Transcript Workspace
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Side: Live Read-Back Terminal Sidecar Console (Dynamic context finder) -->
+            <div class="w-full xl:w-96 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between shadow-xl shrink-0">
+                <div>
+                    <h3 class="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-2 flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-red-600"></span>
+                        Live Read-Back Terminal
+                    </h3>
+                    <p class="text-xs text-slate-400 mb-4 leading-relaxed font-sans">Attorneys frequently ask for "read-backs" of testimony during proceedings. Use this terminal search to scan either the live stream or completed blocks instantly.</p>
+
+                    <div class="space-y-4 font-sans">
+                        <div>
+                            <div class="relative">
+                                <input id="readBackSearch" oninput="executeReadbackSearch(this.value)" type="text" placeholder="Search string patterns..." class="w-full bg-slate-950 border border-slate-850 rounded-lg pl-8 pr-3 py-2 text-xs text-white focus:outline-none focus:border-red-500 font-mono">
+                                <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            </div>
+                        </div>
+
+                        <!-- Read-Back Search Results List -->
+                        <div class="bg-slate-950 border border-slate-850 rounded-xl p-3 h-[380px] overflow-y-auto space-y-3 font-sans" id="readBackResultsContainer">
+                            <p class="text-[10px] text-slate-500 text-center py-24 italic font-sans">No queries tracked yet. Search above to check historical arrays.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 mt-6">
+                    <p class="text-xs text-slate-400 italic font-sans">"Matches highlight timestamps and direct lines for legal verification."</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- STAGE 3: TRANSCRIPT WORKSPACE (THE INTEGRATED WORKHORSE WITH MULTI-STAGE PIPELINE) -->

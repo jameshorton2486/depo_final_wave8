@@ -1,0 +1,407 @@
+"""Router for /api/transcripts -- the Stage 2 transcripts engine.
+
+Endpoints:
+    POST   /api/transcripts/upload                 upload media, queue a job
+    GET    /api/transcripts/jobs                    list jobs (?case_id=...)
+    GET    /api/transcripts/jobs/{job_id}           job status + metadata
+    GET    /api/transcripts/jobs/{job_id}/content   full canonical content
+    GET    /api/transcripts/jobs/{job_id}/packet    working transcript packet
+    GET    /api/transcripts/jobs/{job_id}/raw       immutable raw packet
+    DELETE /api/transcripts/jobs/{job_id}           delete a job
+    POST   /api/transcripts/readback                search persisted transcripts
+
+Processing model: upload saves the file and creates a 'queued' job, then
+the ingestion pipeline runs as a FastAPI BackgroundTask. The frontend
+polls GET /jobs/{job_id} for status. This keeps the local-first desktop
+build simple -- no external queue/worker infrastructure.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from loguru import logger
+from pydantic import BaseModel, Field
+
+from backend.config import settings
+from backend.models.transcripts import (
+    DetectedSpeaker,
+    ReadbackMatch,
+    ReadbackResult,
+    RoleOption,
+    SpeakerMappingSaveRequest,
+    SpeakerMappingView,
+    TranscriptContent,
+    TranscriptJob,
+    TranscriptJobList,
+    TranscriptParticipant,
+    TranscriptSpeaker,
+    TranscriptUtterance,
+    TranscriptWord,
+)
+from backend.services import speaker_mapping
+from backend.transcript import ingest
+from backend.transcript import packet as packet_mod
+from backend.transcript import repository as trepo
+
+router = APIRouter(prefix="/api/transcripts", tags=["transcripts"])
+
+# Upload guard. The standard-library Deepgram uploader has its own
+# 250 MB cap; this is the server-side accept limit.
+MAX_UPLOAD_BYTES = 300 * 1024 * 1024  # 300 MB
+
+ALLOWED_EXTENSIONS = {
+    ".mp3", ".wav", ".m4a", ".mp4", ".mov", ".aac", ".ogg", ".flac", ".webm",
+}
+
+
+def _safe_filename(name: str) -> str:
+    """Strip path components and unsafe characters from an upload filename."""
+    name = Path(name or "upload").name
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return name or "upload"
+
+
+def _audio_dir() -> Path:
+    path = settings.data_root / "audio"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+# ====================================================================
+# Upload + queue
+# ====================================================================
+
+
+@router.post("/upload", response_model=TranscriptJob, status_code=status.HTTP_201_CREATED)
+async def upload_transcript(
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    case_id: str | None = Form(default=None),
+    session_id: str | None = Form(default=None),
+    sequence_index: int = Form(default=0),
+) -> TranscriptJob:
+    """Accept one media file, persist it, and queue a transcription job.
+
+    Returns the created job immediately with status='queued'. The
+    ingestion pipeline runs in the background; poll GET /jobs/{job_id}.
+    """
+    filename = _safe_filename(file.filename or "upload")
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Unsupported file type '{ext}'. "
+                f"Accepted: {', '.join(sorted(ALLOWED_EXTENSIONS))}."
+            ),
+        )
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty.",
+        )
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large ({len(contents)} bytes; max {MAX_UPLOAD_BYTES}).",
+        )
+
+    # Validate the case FK up front for a clean 400 instead of a later
+    # silent SET NULL. An absent case_id is allowed (transcribe-first).
+    if case_id:
+        from backend.db import repository as l1_repo
+
+        if l1_repo.get_case(case_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Case {case_id} does not exist.",
+            )
+
+    # Create the job row first so we have the job_id for the audio path.
+    job = trepo.create_job(
+        {
+            "case_id": case_id,
+            "session_id": session_id,
+            "source_filename": filename,
+            "source_size_bytes": len(contents),
+            "media_kind": "prerecorded",
+            "sequence_index": sequence_index,
+            "engine": "deepgram-nova-3",
+        }
+    )
+    job_id = job["job_id"]
+
+    # Persist the media file alongside its job id.
+    audio_path = _audio_dir() / f"{job_id}__{filename}"
+    audio_path.write_bytes(contents)
+    job = trepo.update_job(job_id, {"audio_path": str(audio_path)})
+
+    logger.info(f"Queued transcript job {job_id}: {filename} ({len(contents)} bytes)")
+
+    # Kick off ingestion after the response is sent.
+    background.add_task(ingest.process_job, job_id)
+
+    return TranscriptJob(**job)
+
+
+# ====================================================================
+# Jobs
+# ====================================================================
+
+
+@router.get("/jobs", response_model=TranscriptJobList)
+def list_jobs(
+    case_id: str | None = Query(default=None, description="Filter to one case"),
+) -> TranscriptJobList:
+    rows = trepo.list_jobs(case_id=case_id)
+    return TranscriptJobList(
+        jobs=[TranscriptJob(**r) for r in rows],
+        count=len(rows),
+    )
+
+
+@router.get("/jobs/{job_id}", response_model=TranscriptJob)
+def get_job(job_id: str) -> TranscriptJob:
+    row = trepo.get_job(job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+    return TranscriptJob(**row)
+
+
+@router.get("/jobs/{job_id}/content", response_model=TranscriptContent)
+def get_job_content(job_id: str) -> TranscriptContent:
+    """Return the full canonical content: job + speakers + utterances + words.
+
+    `participants` carries the confirmed speaker-identity mapping when the
+    Speaker Mapping step has been completed; it is empty otherwise.
+    """
+    row = trepo.get_job(job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+    return TranscriptContent(
+        job=TranscriptJob(**row),
+        speakers=[TranscriptSpeaker(**s) for s in trepo.get_speakers(job_id)],
+        utterances=[TranscriptUtterance(**u) for u in trepo.get_utterances(job_id)],
+        words=[TranscriptWord(**w) for w in trepo.get_words(job_id)],
+        participants=[
+            TranscriptParticipant(**p) for p in trepo.get_participants(job_id)
+        ],
+    )
+
+
+# ====================================================================
+# Speaker Mapping  -- raw diarization indices -> canonical participants
+# ====================================================================
+
+
+def _speaker_sample(speaker_index: int, utterances: list[dict]) -> str:
+    """Pick a representative transcript snippet for one raw speaker."""
+    own = [
+        (u.get("text") or "").strip()
+        for u in utterances
+        if u.get("speaker_index") == speaker_index and (u.get("text") or "").strip()
+    ]
+    if not own:
+        return ""
+    # Prefer the first reasonably substantial line; fall back to the first.
+    sample = next((t for t in own if len(t.split()) >= 4), own[0])
+    return sample if len(sample) <= 160 else sample[:157].rstrip() + "..."
+
+
+@router.get("/jobs/{job_id}/speaker-mapping", response_model=SpeakerMappingView)
+def get_speaker_mapping(job_id: str) -> SpeakerMappingView:
+    """Return the Speaker Mapping step payload for one job.
+
+    If the reporter has not yet saved a mapping, a deterministic first
+    guess is computed (no AI) and returned with is_prefill=True so the UI
+    can show it as an editable suggestion.
+    """
+    row = trepo.get_job(job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+
+    speakers = trepo.get_speakers(job_id)
+    utterances = trepo.get_utterances(job_id)
+
+    detected = [
+        DetectedSpeaker(
+            speaker_index=s["speaker_index"],
+            speaker_label=s["speaker_label"],
+            word_count=s.get("word_count", 0),
+            utterance_count=sum(
+                1 for u in utterances if u.get("speaker_index") == s["speaker_index"]
+            ),
+            sample=_speaker_sample(s["speaker_index"], utterances),
+        )
+        for s in speakers
+    ]
+
+    saved = trepo.get_participants(job_id)
+    if saved:
+        participants = saved
+        is_prefill = any(p.get("is_prefill") for p in saved)
+    else:
+        participants = speaker_mapping.prefill_participants(speakers, utterances)
+        is_prefill = True
+
+    return SpeakerMappingView(
+        job_id=job_id,
+        source_filename=row["source_filename"],
+        detected_speakers=detected,
+        participants=[TranscriptParticipant(**p) for p in participants],
+        roles=[
+            RoleOption(value=r, label=speaker_mapping.ROLE_LABELS[r])
+            for r in speaker_mapping.ROLES
+        ],
+        is_prefill=is_prefill,
+    )
+
+
+@router.put("/jobs/{job_id}/speaker-mapping", response_model=SpeakerMappingView)
+def save_speaker_mapping(
+    job_id: str, payload: SpeakerMappingSaveRequest
+) -> SpeakerMappingView:
+    """Persist the reporter-confirmed speaker mapping for a job.
+
+    Saved participants are marked is_prefill=0 -- the reporter has taken
+    ownership of the mapping. Roles are validated against the fixed set.
+    """
+    row = trepo.get_job(job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+
+    to_save: list[dict] = []
+    for p in payload.participants:
+        if not speaker_mapping.is_valid_role(p.role):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown participant role '{p.role}'.",
+            )
+        to_save.append(
+            {
+                "participant_id": p.participant_id,
+                "name": p.name,
+                "role": p.role,
+                "speaker_indices": p.speaker_indices,
+                "is_prefill": 0,  # reporter-confirmed
+                "sort_order": p.sort_order,
+            }
+        )
+
+    trepo.save_participants(job_id, to_save)
+    logger.info(f"Saved speaker mapping for job {job_id}: {len(to_save)} participant(s)")
+    return get_speaker_mapping(job_id)
+
+
+@router.get("/jobs/{job_id}/packet")
+def get_working_packet(job_id: str) -> dict:
+    """Return the editable WORKING transcript packet."""
+    return _read_packet_or_404(job_id, layer="working")
+
+
+@router.get("/jobs/{job_id}/raw")
+def get_raw_packet(job_id: str) -> dict:
+    """Return the IMMUTABLE raw transcript packet."""
+    return _read_packet_or_404(job_id, layer="raw")
+
+
+def _read_packet_or_404(job_id: str, layer: str) -> dict:
+    row = trepo.get_job(job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+    path_field = "raw_packet_path" if layer == "raw" else "working_packet_path"
+    packet_path = row.get(path_field)
+    if not packet_path or not Path(packet_path).exists():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"No {layer} packet for job {job_id} yet "
+                f"(current status: {row['status']})."
+            ),
+        )
+    return packet_mod.read_packet(packet_path)
+
+
+@router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_job(job_id: str) -> None:
+    """Delete a job, its DB content, and its on-disk artifacts."""
+    row = trepo.get_job(job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+
+    # Best-effort cleanup of on-disk artifacts.
+    for path_value in (row.get("audio_path"), row.get("raw_packet_path")):
+        if path_value:
+            try:
+                Path(path_value).unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning(f"Could not remove {path_value}: {exc}")
+    transcripts_dir = settings.data_root / "transcripts" / job_id
+    if transcripts_dir.exists():
+        import shutil
+
+        shutil.rmtree(transcripts_dir, ignore_errors=True)
+
+    trepo.delete_job(job_id)
+
+
+# ====================================================================
+# Readback search
+# ====================================================================
+
+
+class ReadbackRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=200)
+    case_id: str | None = None
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+@router.post("/readback", response_model=ReadbackResult)
+def readback_search(payload: ReadbackRequest) -> ReadbackResult:
+    """Search persisted transcripts for a phrase.
+
+    Backs the Stage 2 Live Read-Back Terminal. Matches against structured
+    utterance rows (not a transcript blob), so it stays fast and returns
+    speaker + timing + source-file context for each hit.
+    """
+    rows = trepo.search_utterances(
+        query=payload.query,
+        case_id=payload.case_id,
+        limit=payload.limit,
+    )
+    return ReadbackResult(
+        query=payload.query,
+        matches=[ReadbackMatch(**r) for r in rows],
+        count=len(rows),
+    )

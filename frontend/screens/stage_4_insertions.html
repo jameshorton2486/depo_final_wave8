@@ -1,0 +1,57 @@
+        <div id="stagePanel4" class="stage-panel flex-1 flex flex-col md:flex-row p-6 gap-6 overflow-y-auto">
+            <div class="flex-1 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between shadow-xl">
+                <div>
+                    <h2 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                        Exhibit & Citation Insertion Panels
+                    </h2>
+                    <p class="text-sm text-slate-400 mb-6">Create automatic linking for deposition exhibits. Changing text pagination inside the living workspace shifts page indexes here automatically.</p>
+
+                    <div class="space-y-4" id="exhibitsIndexList">
+                        <!-- Loaded dynamically -->
+                    </div>
+
+                    <button onclick="createNewExhibitMark()" class="mt-4 px-4 py-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5">
+                        ➕ Add New Exhibit Insertion Link
+                    </button>
+                </div>
+
+                <div class="pt-6 border-t border-slate-800 flex justify-between items-center select-none">
+                    <button onclick="goToStage(3)" class="text-slate-400 hover:text-white text-xs font-semibold">◀ Back to Transcript Edit Workspace</button>
+                    <button onclick="goToStage(5)" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-1.5">
+                        Proceed to Final Certification
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Pre-rendered appearances preview page in Word doc form -->
+            <div class="w-full md:w-96 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between shadow-xl">
+                <div>
+                    <h3 class="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+                        Index Rendering Preview
+                    </h3>
+                    <p class="text-xs text-slate-400 mb-4">Auto-rendered exhibit index section as compiled for the final PDF bundle output.</p>
+
+                    <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl font-mono text-[10px] leading-5 text-slate-400 h-[380px] overflow-y-auto select-none">
+                        <div class="text-center text-white font-bold border-b border-slate-800 pb-2 mb-3">EXHIBIT INDEX SECTION</div>
+                        <p class="text-center mb-2">--- EXHIBIT NUMBER 1 ---</p>
+                        <p class="flex justify-between"><span>Description: MRI Scans</span><span class="text-white">Page 1</span></p>
+                        <p class="flex justify-between"><span>Marked/Identified:</span><span class="text-white">Page 1, Line 12</span></p>
+                        <p class="flex justify-between"><span>Offered into Evidence:</span><span class="text-white">Page 1, Line 15</span></p>
+
+                        <p class="text-center mt-4 mb-2">--- EXHIBIT NUMBER 2 ---</p>
+                        <p class="flex justify-between"><span>Description: MD License</span><span class="text-white">Page 1</span></p>
+                        <p class="flex justify-between"><span>Marked/Identified:</span><span class="text-white">Page 1, Line 22</span></p>
+                        <p class="flex justify-between"><span>Offered into Evidence:</span><span class="text-white">Page 1, Line 24</span></p>
+                    </div>
+                </div>
+
+                <div class="bg-indigo-950/40 p-3 rounded-lg border border-indigo-500/10 mt-4 select-none">
+                    <p class="text-[11px] text-indigo-300 leading-relaxed italic">"Line changes directly shift table pointers. Index page counts rebuild on final compiling run."</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- STAGE 5: CERTIFICATION (READ-ONLY GATE & COMPLIANCE SIG) -->

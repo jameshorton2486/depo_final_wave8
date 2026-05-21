@@ -1,0 +1,79 @@
+        /* Custom scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* Highlight effects */
+        .highlight-word-playing {
+            background-color: #fef08a;
+            color: #0f172a;
+            border-radius: 2px;
+            font-weight: 500;
+        }
+        .low-confidence-word {
+            border-bottom: 2px dashed #f59e0b;
+        }
+
+        /* Word Document Paper Simulation */
+        .ms-word-page {
+            background: #ffffff !important;
+            color: #1e293b !important;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+            border-radius: 2px;
+            position: relative;
+            font-family: 'JetBrains Mono', monospace; /* Transcripts remain monospaced */
+            line-height: 2.25rem !important;
+            min-height: 1056px; /* 11 inches at 96 dpi */
+            padding-top: 1.5in;
+            padding-bottom: 1in;
+            padding-left: 1.25in;
+            padding-right: 1in;
+        }
+
+        /* Marginal layout rule line simulation */
+        .ufm-rule-left {
+            border-right: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .ufm-rule-right {
+            border-left: 1px solid rgba(239, 68, 68, 0.15);
+        }
+
+        /* MS Word Legal Red Margin lines for printing */
+        .ms-word-redline-left {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 1.1in;
+            border-left: 1px solid rgba(220, 38, 38, 0.5);
+            border-right: 1px solid rgba(220, 38, 38, 0.2);
+            width: 3px;
+            pointer-events: none;
+        }
+        .ms-word-redline-right {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            right: 0.9in;
+            border-left: 1px solid rgba(220, 38, 38, 0.15);
+            pointer-events: none;
+        }
+
+        /* Alignment animations */
+        @keyframes highlight-flash {
+            0% { background-color: rgba(5, 150, 105, 0.3); }
+            100% { background-color: transparent; }
+        }
+        .animate-flash {
+            animation: highlight-flash 1.5s ease-out;
+        }

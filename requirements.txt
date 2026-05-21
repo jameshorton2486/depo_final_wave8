@@ -1,0 +1,4 @@
+# Root-level requirements file — superset for IDE convenience.
+# For production installs, prefer:  pip install -r backend/requirements.txt
+
+-r backend/requirements.txt

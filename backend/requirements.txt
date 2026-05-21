@@ -1,0 +1,16 @@
+# Runtime dependencies for the FastAPI backend.
+# Pin major versions; allow minor/patch upgrades.
+
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0
+pydantic>=2.9,<3.0
+python-dotenv>=1.0,<2.0
+loguru>=0.7,<1.0
+pywebview>=5.4,<6.0
+pdfplumber>=0.11,<1.0
+python-multipart>=0.0.12,<1.0
+
+# Deepgram transcription uses the stdlib (urllib) REST client in
+# backend/deepgram/client.py — no SDK dependency is required.
+# Set DEEPGRAM_API_KEY in your environment/.env to enable real ASR;
+# without a key the pipeline runs a deterministic offline fallback.

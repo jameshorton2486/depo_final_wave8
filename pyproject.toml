@@ -1,0 +1,32 @@
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-v --tb=short"
+
+[project]
+name = "depo-pro"
+version = "0.1.0"
+description = "Foundation architecture for the DEPO-PRO desktop application."
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "loguru>=0.7,<1.0",
+    "pydantic>=2.9,<3.0",
+    "python-dotenv>=1.0,<2.0",
+    "pywebview>=5.4,<6.0",
+    "uvicorn[standard]>=0.32,<1.0",
+]

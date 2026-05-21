@@ -1,0 +1,65 @@
+        <div id="stagePanel5" class="stage-panel flex-1 flex flex-col p-6 items-center justify-center overflow-y-auto">
+            <div class="max-w-xl w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-b from-indigo-500/5 to-transparent pointer-events-none"></div>
+
+                <!-- UNLOCKED CERT CARD -->
+                <div class="relative z-10 text-center" id="certPreLock">
+                    <div class="mb-4 inline-flex items-center justify-center p-3.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                    </div>
+
+                    <h2 class="text-2xl font-bold text-white mb-2">Final Case Certification</h2>
+                    <p class="text-sm text-slate-400 mb-6 max-w-sm mx-auto">Lock all working lines, compile final SHA checksums, and sign the official provenance trail. Edits cannot be made past this point.</p>
+
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-left space-y-3 mb-6 select-none">
+                        <label class="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="certCheck1" class="rounded border-slate-800 bg-slate-900 text-indigo-500 focus:ring-0 mt-0.5">
+                            <span>I certify speaker alignments and Texas UFM margin configurations conform to standard rules.</span>
+                        </label>
+                        <label class="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="certCheck2" class="rounded border-slate-800 bg-slate-900 text-indigo-500 focus:ring-0 mt-0.5">
+                            <span>I confirm all correction memory dictionaries are synced and signed with my personal ID.</span>
+                        </label>
+                        <label class="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="certCheck3" class="rounded border-slate-800 bg-slate-900 text-indigo-500 focus:ring-0 mt-0.5">
+                            <span>I understand this locks the transcript, shifting working layers to a sealed certified state.</span>
+                        </label>
+                    </div>
+
+                    <div class="mb-6 text-left">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Court Reporter Digital Signature Signature Code</label>
+                        <input id="reporterSignatureInput" type="text" placeholder="Type name or ID code (e.g. Richard Vance CSR)" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono">
+                    </div>
+
+                    <div class="flex items-center justify-between pt-4 border-t border-slate-800 gap-4 select-none">
+                        <button onclick="goToStage(3)" class="text-slate-400 hover:text-white text-xs font-semibold font-mono">Cancel / Return to Edits</button>
+                        <button onclick="signTranscript()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-1.5">
+                            Lock & Sign Document Bundle
+                        </button>
+                    </div>
+                </div>
+
+                <!-- CERTIFIED SELECTION CARD -->
+                <div class="relative z-10 text-center hidden" id="certPostLock">
+                    <div class="mb-4 inline-flex items-center justify-center p-3.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                    </div>
+
+                    <h2 class="text-2xl font-bold text-white mb-2">Transcript Sealed & Certified</h2>
+                    <p class="text-sm text-slate-400 mb-6 max-w-sm mx-auto">Provenances signed, hash calculations computed, working layer sealed safely.</p>
+
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-left font-mono text-xs text-slate-400 space-y-2 mb-6">
+                        <p class="flex justify-between"><span>Status:</span><span class="text-emerald-400 font-bold">LOCKED & CERTIFIED</span></p>
+                        <p class="flex justify-between"><span>Signatory:</span><span id="renderedSignatory" class="text-white font-semibold">Richard Vance CSR</span></p>
+                        <p class="flex justify-between"><span>Timestamp:</span><span class="text-slate-300" id="lockTimestamp">May 19, 2026</span></p>
+                        <p class="flex justify-between"><span>SHA256 Hash:</span><span class="text-slate-500 truncate w-32 text-right">e942b03fbc193ff4bc...</span></p>
+                    </div>
+
+                    <button onclick="goToStage(6)" class="w-full px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-600/20">
+                        Continue to File Export Panel
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- STAGE 6: EXPORT (DOCX PROPRINT ENVIRONMENT) -->
