@@ -7,7 +7,7 @@ from backend.pagination.flow_rules import can_start_on_page
 from backend.pagination.model import LINES_PER_PAGE, PhysicalLine
 from backend.pagination.paginator import paginate, paginated_to_render_check
 from backend.pagination.wrapping import wrap_render_line
-from backend.stage_s.models import RenderLine
+from backend.stage_s.models import LINE_A, LINE_Q, RenderLine
 
 
 def _rline(i: int, text: str, tab: int = 2, ltype: str = "qa") -> RenderLine:
@@ -91,13 +91,14 @@ def test_empty_input_is_safe():
 
 # --- flow rules ------------------------------------------------------
 
-def test_structure_does_not_start_with_too_few_slots():
-    # 1 slot left, a 3-line structure that is not keep-together:
-    # needs MIN_LINES_TO_START (2) -> cannot start.
+def test_structure_starts_whenever_a_slot_remains():
+    # BLOCKER-2 (Texas UFM): orphan/widow control is OFF -- a
+    # structure starts whenever >= 1 slot remains and flows onto the
+    # next page. Only a full page (0 slots) blocks a start.
     phys = [PhysicalLine(text="x", tab_level=2, line_type="qa",
                          source_render_line_id="L1") for _ in range(3)]
-    assert can_start_on_page(1, phys) is False
-    assert can_start_on_page(2, phys) is True
+    assert can_start_on_page(1, phys) is True
+    assert can_start_on_page(0, phys) is False
 
 
 def test_structure_can_start_with_enough_slots():
@@ -112,7 +113,11 @@ def test_texas_ufm_margins():
     g = TEXAS_UFM
     assert g.margin_top_twips == 1440       # 1.0"
     assert g.margin_left_twips == 1800      # 1.25"
+    assert g.margin_right_twips == 1080     # 0.75" (BLOCKER-1)
     assert g.page_width_twips == 12240      # 8.5"
+    # BLOCKER-1: text area must be EXACTLY the UFM 6.5" minimum.
+    assert g.text_area_width_twips == int(6.5 * TWIPS_PER_INCH)
+    assert g.meets_text_area_minimum is True
 
 
 def test_texas_ufm_tab_system():
@@ -201,3 +206,23 @@ def test_geometry_empty_paginated_document():
     geo = apply_geometry(doc, TEXAS_UFM)
     assert geo.total_pages == 1
     assert len(geo.pages[0].slots) == LINES_PER_PAGE
+
+def test_qa_tether_keeps_question_with_its_answer():
+    # BLOCKER-2: a one-line Q followed by an A must not be the last
+    # slot of a page. Fill 24 slots, then a Q (slot 25 would strand
+    # it) immediately followed by an A -- the Q must move to page 2.
+    lines = [_rline(i, f"Filler line {i}.") for i in range(24)]
+    lines.append(_rline(99, "Was the light red?", ltype=LINE_Q))
+    lines.append(_rline(100, "Yes, it was red.", ltype=LINE_A))
+    doc = paginate(lines)
+    # The question's physical line lands on page 2, slot 1 -- never
+    # stranded alone on page 1, slot 25.
+    q_slot = None
+    for page in doc.pages:
+        for slot in page.slots:
+            pl = slot.physical_line
+            if pl is not None and pl.source_render_line_id == "L99":
+                q_slot = (page.page_number, slot.slot_number)
+    assert q_slot == (2, 1)
+    # No render line is lost.
+    assert paginated_to_render_check(doc)["placed_lines"] == 26

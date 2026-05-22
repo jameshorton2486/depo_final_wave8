@@ -1,4 +1,4 @@
-"""Geometry profiles — Wave 19B.
+"""Geometry profiles -- Wave 19B.
 
 A GeometryProfile holds the exact physical measurements for one
 jurisdiction's transcript format. TEXAS_UFM is the only profile built;
@@ -10,7 +10,7 @@ Word unit: 1 inch = 1440 twips, 1 point = 20 twips.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 TWIPS_PER_INCH = 1440
 TWIPS_PER_POINT = 20
@@ -30,17 +30,17 @@ class GeometryProfile:
     margin_top_twips: int = 1440        # 1.0"
     margin_bottom_twips: int = 1440     # 1.0"
     margin_left_twips: int = 1800       # 1.25"
-    margin_right_twips: int = 1440      # 1.0"
+    margin_right_twips: int = 1080      # 0.75" -- BLOCKER-1 resolution
 
     # --- format box ---
     # Solid black marginal lines enclosing the text.
     format_box_line_pt: float = 0.75
-    # NOTE — measurement conflict flagged for James: the UFM spec
-    # requires a text area >= 6.5" AND a 1.25" left + 1.0" right margin.
-    # On an 8.5" page those cannot both hold (8.5 - 1.25 - 1.0 = 6.25").
-    # text_area_width_twips below resolves to 9000 (6.25"). If the 6.5"
-    # minimum is firm, the left margin must drop to 1.0". Awaiting
-    # James's call; the margins as given are used until then.
+    # BLOCKER-1 RESOLVED (Texas UFM). The UFM mandates a text area no
+    # less than 6.5" (to hold the 56-63 chars-per-line range). On an
+    # 8.5" page the margins must therefore total exactly 2.0". James's
+    # decision: 1.25" left + 0.75" right -> text area EXACTLY 6.5"
+    # (9360 twips). The earlier 1.25"/1.0" draft gave only 6.25" and
+    # was a compliance failure; it is corrected here.
     text_area_min_width_inches: float = 6.5
 
     # --- typography ---
@@ -73,6 +73,12 @@ class GeometryProfile:
     def text_area_height_twips(self) -> int:
         return (self.page_height_twips
                 - self.margin_top_twips - self.margin_bottom_twips)
+
+    @property
+    def meets_text_area_minimum(self) -> bool:
+        """True when the text area satisfies the UFM 6.5" minimum."""
+        return self.text_area_width_twips >= int(
+            self.text_area_min_width_inches * TWIPS_PER_INCH)
 
     def tab_twips(self, tab_number: int) -> int:
         """Twips for tab 1..5. Tab 0 is the left margin (0 twips)."""

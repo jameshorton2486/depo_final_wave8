@@ -576,7 +576,8 @@ def _build_export_document(job_id: str):
             -> regex + Stage X corrections -> Stage S structural render
             -> export_render.py (paginated layout)
 
-    Returns an ExportDocument, or None if the job does not exist.
+    Returns (ExportDocument, PaginatedDocument). PaginatedDocument is
+    None only when the transcript body is empty.
     Shared by the export-preview endpoint and the Wave 18 export
     endpoint so preview and export can never diverge.
     """
@@ -667,7 +668,9 @@ def _build_export_document(job_id: str):
             witness = p.get("name")
             break
 
-    doc = export_render_mod.render_export_document(
+    # BLOCKER-5 fix: use the layout-aware render so the live export
+    # path receives the PaginatedDocument the Geometry Layer needs.
+    doc, paginated = export_render_mod.render_export_with_layout(
         working,
         caption=caption,
         cause_number=cause_number,
@@ -676,7 +679,7 @@ def _build_export_document(job_id: str):
         examining_attorney_label=examining_label,
         is_approximate=False,
     )
-    return doc
+    return doc, paginated
 
 
 @router.get("/jobs/{job_id}/export-preview")
@@ -688,7 +691,8 @@ def get_export_preview(job_id: str) -> dict:
     the real export share `_build_export_document`, so they cannot
     diverge.
     """
-    return _build_export_document(job_id).to_dict()
+    doc, _ = _build_export_document(job_id)
+    return doc.to_dict()
 
 
 class ExportRequest(BaseModel):
@@ -707,7 +711,7 @@ def export_transcript(job_id: str, payload: ExportRequest) -> dict:
     """
     from backend.export import export_service
 
-    doc = _build_export_document(job_id)   # 404s on unknown job
+    doc, paginated = _build_export_document(job_id)   # 404s on unknown job
 
     # Resolve the case's workspace directory, if any.
     case_dir = None
@@ -725,7 +729,8 @@ def export_transcript(job_id: str, payload: ExportRequest) -> dict:
     try:
         result = export_service.export_document(
             doc, payload.fmt, payload.destination,
-            explicit_path=payload.explicit_path, case_dir=case_dir)
+            explicit_path=payload.explicit_path, case_dir=case_dir,
+            paginated_document=paginated)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

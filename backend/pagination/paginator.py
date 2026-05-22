@@ -16,7 +16,10 @@ from __future__ import annotations
 
 import uuid
 
-from backend.pagination.flow_rules import can_start_on_page
+from backend.pagination.flow_rules import (
+    can_start_on_page,
+    requires_qa_tether,
+)
 from backend.pagination.model import (
     LINES_PER_PAGE,
     ContinuationState,
@@ -63,7 +66,7 @@ def paginate(
         pages.append(current)
         next_slot = 0
 
-    for rline in render_lines:
+    for i, rline in enumerate(render_lines):
         physical = wrap_render_line(rline, wrap_width)
         if not physical:
             continue
@@ -71,10 +74,25 @@ def paginate(
         remaining = LINES_PER_PAGE - next_slot
 
         # Flow rules: may this structure start in the slots remaining?
-        # If not, move wholly to a fresh page (orphan avoidance).
+        # With UFM orphan control off, this only blocks a full page.
         if remaining > 0 and not can_start_on_page(remaining, physical):
             _advance_page()
             remaining = LINES_PER_PAGE
+
+        # Q/A tether (BLOCKER-2): a question must not be stranded at
+        # the foot of a page with its answer beginning the next page.
+        # If the question's lines plus the first line of the following
+        # answer cannot share this page -- yet a fresh page could hold
+        # them -- push the question forward so the "Q." and the start
+        # of the "A." stay tethered.
+        next_line = (render_lines[i + 1]
+                     if i + 1 < len(render_lines) else None)
+        if (next_line is not None and requires_qa_tether(
+                rline.line_type, next_line.line_type)):
+            tether_need = len(physical) + 1
+            if remaining < tether_need <= LINES_PER_PAGE:
+                _advance_page()
+                remaining = LINES_PER_PAGE
 
         # Place each physical line; cross a page boundary as needed and
         # record an explicit ContinuationState when one structure's

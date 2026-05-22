@@ -123,3 +123,48 @@ def sample_job(client) -> str:
     from backend.transcript import repository as trepo
     job = trepo.create_job({"source_filename": "test_session.mp3"})
     return job["job_id"]
+
+
+@pytest.fixture()
+def sample_job_with_content(client) -> str:
+    """Create a transcript job with real utterances and participants.
+
+    Unlike `sample_job` (empty), this job has a short Q&A body, so the
+    Packaging Engine produces body pages and the full
+    assemble -> certify path can be exercised end-to-end (BLOCKER-4).
+    """
+    from backend.transcript import repository as trepo
+    job = trepo.create_job({"source_filename": "depo_session.mp3"})
+    job_id = job["job_id"]
+
+    speakers = [
+        {"speaker_row_id": "spk-0", "speaker_index": 0,
+         "speaker_label": "Speaker 0", "assigned_name": "Mr. Vance",
+         "speaker_role": "examining_attorney", "word_count": 24},
+        {"speaker_row_id": "spk-1", "speaker_index": 1,
+         "speaker_label": "Speaker 1", "assigned_name": "Dana Reed",
+         "speaker_role": "witness", "word_count": 30},
+    ]
+    exchange = [
+        (0, 0, "Speaker 0", "Please state your name for the record."),
+        (1, 1, "Speaker 1", "My name is Dana Reed."),
+        (2, 0, "Speaker 0", "And where do you currently reside?"),
+        (3, 1, "Speaker 1", "I live in San Antonio, Texas."),
+        (4, 0, "Speaker 0", "Were you working on the afternoon in question?"),
+        (5, 1, "Speaker 1", "Yes, I was on duty that entire afternoon."),
+    ]
+    utterances = [
+        {"utterance_id": f"utt-{i}", "utterance_index": i,
+         "speaker_index": spk, "speaker_label": label,
+         "start_time": float(i * 5), "end_time": float(i * 5 + 4),
+         "text": text, "avg_confidence": 0.99}
+        for (i, spk, label, text) in exchange
+    ]
+    trepo.save_transcript_content(job_id, speakers, utterances, words=[])
+
+    trepo.save_participants(job_id, [
+        {"name": "Vance", "role": "examining_attorney",
+         "speaker_indices": [0], "honorific": "MR."},
+        {"name": "Dana Reed", "role": "witness", "speaker_indices": [1]},
+    ])
+    return job_id

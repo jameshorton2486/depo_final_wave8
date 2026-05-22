@@ -485,3 +485,54 @@ def test_packaging_certify_invalid_metadata_422(client, sample_job):
         f"/api/packages/{pkg_id}/certify",
         json={"metadata": bad_meta})
     assert certify_res.status_code == 422
+
+
+def test_packaging_certify_full_workflow(client, sample_job_with_content):
+    """End-to-end positive path: snapshot -> lock -> assemble -> certify.
+
+    BLOCKER-4 regression. The empty-job fixture can only test the
+    negative path (422 on no body); this exercises a real-content job
+    all the way to a CERTIFIED package.
+    """
+    job_id = sample_job_with_content
+
+    # 1. Snapshot and lock.
+    snap_res = client.post(f"/api/snapshots/jobs/{job_id}",
+                           json={"category": "CERTIFIED"})
+    assert snap_res.status_code == 200
+    snap_id = snap_res.json()["snapshot_id"]
+    assert client.post(f"/api/snapshots/{snap_id}/lock").status_code == 200
+
+    metadata = {
+        "cause_number": "2024-CI-09912",
+        "caption": "Acme Corp. v. Dana Reed",
+        "court": "288th Judicial District Court, Bexar County, Texas",
+        "witness_name": "Dana Reed",
+        "reporter_name": "Miah Bardot",
+        "reporter_csr_number": "TX-10423",
+        "proceedings_date": "May 21, 2026",
+    }
+
+    # 2. Assemble a DRAFT package -- real content => a non-empty body.
+    assemble_res = client.post(
+        f"/api/packages/jobs/{job_id}",
+        json={"snapshot_id": snap_id, "metadata": metadata})
+    assert assemble_res.status_code == 200
+    assembled = assemble_res.json()
+    pkg_id = assembled["package_id"]
+    assert assembled["package_state"] == "DRAFT"
+    assert assembled["generation_report"]["body_pages"] >= 1
+
+    # 3. Certify -- the positive path the empty fixture cannot reach.
+    certify_res = client.post(
+        f"/api/packages/{pkg_id}/certify",
+        json={"metadata": metadata})
+    assert certify_res.status_code == 200
+    certified = certify_res.json()
+    assert certified["certified"] is True
+    assert certified["generation_report"]["certification_status"] == "CERTIFIED"
+
+    # 4. A certified package cannot be certified again.
+    again = client.post(f"/api/packages/{pkg_id}/certify",
+                        json={"metadata": metadata})
+    assert again.status_code == 400

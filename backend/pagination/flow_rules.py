@@ -1,53 +1,63 @@
-"""Transcript Flow Rules — Wave 19A.
+"""Transcript Flow Rules -- Wave 19A (BLOCKER-2 resolved per Texas UFM).
 
-Flow control: more than widow/orphan logic. Certain transcript
-structures have constraints on how they may cross a page boundary.
+Flow control across page boundaries. The Texas UFM mandates EXACTLY 25
+lines of text per page and PROHIBITS blank lines within the transcript
+body. Standard word-processor orphan/widow control -- which holds
+paragraphs together by leaving blank lines at the foot of a page --
+therefore VIOLATES the UFM and is disabled here.
 
-These are CONSERVATIVE DEFAULTS, marked for James's confirmation
-(plan Q19-5). They are data-driven so precise UFM rules can replace
-them without touching the paginator.
+Consequences (James's BLOCKER-2 decision):
+  * No orphan/widow blank-line control: every one of the 25 slots is
+    filled; content flows continuously across page breaks.
+  * Long answers, colloquy blocks, and multi-line parentheticals MUST
+    be allowed to split across pages to keep the strict line count.
+  * The ONE exception is the Q/A tether: a "Q." line may not be
+    stranded at the foot of a page with its "A." beginning on the next
+    page. That rule is enforced by the paginator via requires_qa_tether.
 """
 from __future__ import annotations
 
 from backend.pagination.model import PhysicalLine
-from backend.stage_s.models import (
-    LINE_COLLOQUY,
-    LINE_PARENTHETICAL,
-)
+from backend.stage_s.models import LINE_A, LINE_Q
 
 # Minimum physical lines of a structure that must fit on the current
-# page for it to START there. If fewer than this many slots remain,
-# the structure moves wholly to the next page (orphan avoidance).
-# NEEDS_JAMES_CONFIRMATION (Q19-5).
-MIN_LINES_TO_START = 2
+# page for it to START there. UFM: orphan/widow control is OFF, so any
+# remaining slot is used -- a structure starts whenever >= 1 slot is
+# free and simply continues onto the next page. (BLOCKER-2)
+MIN_LINES_TO_START = 1
 
-# Line types that should never be split across a page boundary at all
-# when they are short. NEEDS_JAMES_CONFIRMATION (Q19-5).
-KEEP_TOGETHER_TYPES = frozenset({LINE_PARENTHETICAL})
+# Line types kept whole (never split) across a page boundary. The UFM
+# requires colloquy and multi-line parentheticals to split for the
+# 25-line count, so NOTHING is kept whole here. The only keep-together
+# rule -- the Q/A tether -- is a pairing rule, handled separately by
+# requires_qa_tether, not by holding a single structure whole.
+# (BLOCKER-2)
+KEEP_TOGETHER_TYPES = frozenset()
 
-# A "short" structure for keep-together purposes: this many physical
-# lines or fewer. NEEDS_JAMES_CONFIRMATION (Q19-5).
-SHORT_STRUCTURE_MAX = 3
+# Retained for API stability; with KEEP_TOGETHER_TYPES empty this is
+# always 0-effect, but the constant is kept so callers do not break.
+SHORT_STRUCTURE_MAX = 0
 
 
 def must_keep_together(physical_lines: list[PhysicalLine]) -> bool:
-    """True when this group of physical lines (one RenderLine's wrap)
-    must not be split across a page boundary."""
+    """True when a structure must not be split across a page boundary.
+
+    Under the UFM (BLOCKER-2) no single structure is kept whole -- this
+    always returns False. Retained so existing callers keep working.
+    """
     if not physical_lines:
         return False
-    if len(physical_lines) > SHORT_STRUCTURE_MAX:
-        return False        # too long to keep whole; it must be allowed to split
-    line_type = physical_lines[0].line_type
-    return line_type in KEEP_TOGETHER_TYPES
+    return physical_lines[0].line_type in KEEP_TOGETHER_TYPES
 
 
 def can_start_on_page(remaining_slots: int,
                        physical_lines: list[PhysicalLine]) -> bool:
     """True when a structure may begin in the remaining slots of the
-    current page (orphan avoidance).
+    current page.
 
-    A keep-together structure may start only if it fits whole. Any
-    other structure needs at least MIN_LINES_TO_START slots.
+    With orphan/widow control disabled (UFM), a structure starts
+    whenever at least one slot remains; it then flows onto the next
+    page as needed.
     """
     if remaining_slots <= 0:
         return False
@@ -55,3 +65,16 @@ def can_start_on_page(remaining_slots: int,
         return remaining_slots >= len(physical_lines)
     needed = min(MIN_LINES_TO_START, len(physical_lines))
     return remaining_slots >= needed
+
+
+def requires_qa_tether(current_line_type: str,
+                       next_line_type: str) -> bool:
+    """True when `current` is a question immediately followed by its
+    answer.
+
+    The Q/A tether is the one UFM keep-together rule: the "Q." line and
+    the START of its "A." must not be severed by a page break. The
+    paginator uses this to decide whether to push a question to a fresh
+    page so its answer can begin alongside it.
+    """
+    return current_line_type == LINE_Q and next_line_type == LINE_A
