@@ -289,8 +289,11 @@ async function startSequentialIngestion() {
  * Calls onUpdate(job) after every poll. Resolves with the final job.
  */
 function pollTranscriptJob(jobId, onUpdate) {
-    const POLL_MS = 1200;
-    const MAX_POLLS = 200;          // ~4 minutes ceiling
+    // The backend allows Deepgram up to 600s, and large depositions
+    // (100 MB+ audio) legitimately take that long. Poll every 3s with
+    // a 20-minute ceiling so the UI never gives up before the backend.
+    const POLL_MS = 3000;
+    const MAX_POLLS = 400;          // 3s x 400 = 20-minute ceiling
     let polls = 0;
 
     return new Promise((resolve, reject) => {
@@ -303,7 +306,14 @@ function pollTranscriptJob(jobId, onUpdate) {
                     return;
                 }
                 if (++polls >= MAX_POLLS) {
-                    reject(new Error("Timed out waiting for transcription to finish."));
+                    // The job is NOT necessarily failed -- the backend may
+                    // still be transcribing. Tell the user it is still
+                    // running and can be picked up from the job list.
+                    reject(new Error(
+                        "Still transcribing after 20 minutes. The job is " +
+                        "likely still running on the backend — check the " +
+                        "transcript job list in a few minutes; do not re-upload."
+                    ));
                     return;
                 }
                 setTimeout(tick, POLL_MS);

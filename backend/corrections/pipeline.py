@@ -23,11 +23,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from backend.corrections import artifacts, guards, metadata, typography
+from backend.corrections import artifacts, guards, legal_phrases, metadata, typography
 from backend.corrections.flags import FlagRegistry, detect as detect_flags
 from backend.corrections.guards import has_sentinels
 from backend.corrections.log import CorrectionLog
 from backend.corrections.model import (
+    CorrectionLogEntry,
     CorrectionResult,
     RenderedLine,
     SpeakerMapUnverifiedError,
@@ -113,15 +114,45 @@ def _process_utterance(
     G  guard         shield protected verbatim spans
     A  artifacts     remove mechanical Deepgram errors
     M  metadata      exact-match substitution
-    (X, S, Q)        structural stages — not built yet
+    X  legal_phrases role-scoped garbled-objection / legal-phrase resolution
+    (S, Q)           structural stages — the stage_s renderer (render path)
     T  typography    spacing / honorifics / dashes
     F  flags         detect-and-flag
     U  unguard       restore protected spans (strictly last)
     """
     uid = utt.utterance_id
 
+    # Regex pre-stage (Wave 14/15a): per-case reporter-authored regex
+    # corrections replay first, before the guards shield anything.
+    # Rules travel on job_config['regex_rules'] as a list of dicts.
+    text = utt.text
+    regex_rule_dicts = ctx.job_config.get("regex_rules") or []
+    if regex_rule_dicts:
+        from backend.corrections.regex_rules import (
+            RegexRule, apply_regex_rules_to_text,
+        )
+        rules = [
+            RegexRule(
+                rule_id=r.get("rule_id", ""),
+                find_pattern=r.get("find_pattern", ""),
+                replace_with=r.get("replace_with", ""),
+                rule_order=r.get("rule_order", 0),
+                enabled=r.get("enabled", True),
+            )
+            for r in regex_rule_dicts
+        ]
+        rx = apply_regex_rules_to_text(text, rules)
+        if rx.changed:
+            log.extend([
+                CorrectionLogEntry(
+                    rule_id=f"REGEX:{s.rule_id}", stage="regex",
+                    utterance_id=uid, before=s.before, after=s.after)
+                for s in rx.substitutions
+            ])
+            text = rx.text
+
     # G — guard
-    text, vault = guards.guard(utt.text)
+    text, vault = guards.guard(text)
 
     # A — artifacts
     text, entries = artifacts.apply(text, uid, ctx)
@@ -131,9 +162,14 @@ def _process_utterance(
     text, entries = metadata.apply(text, uid, ctx)
     log.extend(entries)
 
-    # X, S, Q — structural stages: not built in the foundation. In Full
-    # Mode they would run here; in Parity Mode they are skipped (3A).
-    # Until they exist the two modes are identical.
+    # X — legal lexicon resolution (role-scoped). Wave 15a: the spec's
+    # true Stage X. Garbled objections / legal phrases from finite
+    # enumerable tables -- deterministic, no AI.
+    text, entries = legal_phrases.apply(text, uid, ctx, role=utt.role)
+    log.extend(entries)
+
+    # S, Q — structural stages are handled by the stage_s renderer on
+    # the render path (they emit a line list, not corrected text).
 
     # T — typography
     text, entries = typography.apply(text, uid, ctx)

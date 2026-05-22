@@ -64,6 +64,26 @@
                             </button>
                         </div>
 
+                        <!-- AI Review Queue (Wave 16) -->
+                        <div class="font-sans">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">AI Review Queue</span>
+                                <span id="aiReviewStatus" class="text-[9px] font-mono text-slate-600">checking…</span>
+                            </div>
+                            <p class="text-[10px] text-slate-500 mb-2 leading-relaxed">AI suggestions are advisory. Nothing changes the transcript until you approve it.</p>
+                            <button id="aiSpeakerMapBtn" onclick="requestAISpeakerMap()"
+                                class="w-full text-[10px] font-semibold text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/60 rounded-lg py-1.5 transition-all mb-2">
+                                ✨ Suggest speaker map
+                            </button>
+                            <button id="aiAnalyzeBtn" onclick="requestAIAnalysis()"
+                                class="w-full text-[10px] font-semibold text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/60 rounded-lg py-1.5 transition-all mb-2">
+                                ✨ Analyze transcript (boundaries · garbles · flags)
+                            </button>
+                            <div class="space-y-1.5" id="aiSuggestionsList">
+                                <p class="text-[10px] text-slate-600 italic">No AI suggestions yet.</p>
+                            </div>
+                        </div>
+
                         <!-- Correction Memory: Real-time learned values -->
                         <div class="font-sans">
                             <div class="flex items-center justify-between mb-2">

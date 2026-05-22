@@ -317,6 +317,27 @@
             // Wave 12: export preview for a transient unsaved transcript.
             return _fetch('POST', '/transcripts/export-preview/fallback', payload);
         },
+        // --- AI review layer (Wave 15b / 16) ------------------------
+        getAIReviewStatus() {
+            return _fetch('GET', '/ai-review/status');
+        },
+        generateAISpeakerMap(jobId) {
+            return _fetch('POST', `/ai-review/jobs/${encodeURIComponent(jobId)}/speaker-map`);
+        },
+        analyzeAIJob(jobId, kinds) {
+            // kinds: optional comma-separated subset of boundaries,garbles,flags
+            const q = kinds ? `?kinds=${encodeURIComponent(kinds)}` : '';
+            return _fetch('POST', `/ai-review/jobs/${encodeURIComponent(jobId)}/analyze${q}`);
+        },
+        listAISuggestions(jobId) {
+            return _fetch('GET', `/ai-review/jobs/${encodeURIComponent(jobId)}/suggestions`);
+        },
+        approveAISuggestion(suggestionId) {
+            return _fetch('POST', `/ai-review/suggestions/${encodeURIComponent(suggestionId)}/approve`);
+        },
+        rejectAISuggestion(suggestionId) {
+            return _fetch('POST', `/ai-review/suggestions/${encodeURIComponent(suggestionId)}/reject`);
+        },
         getTranscriptRawPacket(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/raw`);
         },

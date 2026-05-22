@@ -7,7 +7,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
+from backend.api import ai_review as ai_review_router
 from backend.api import cases as cases_router
+from backend.api import corrections as corrections_router
 from backend.api import intake as intake_router
 from backend.api import nod as nod_router
 from backend.api import reporters as reporters_router
@@ -73,6 +75,8 @@ app.include_router(reporters_router.router)
 app.include_router(nod_router.router)
 app.include_router(intake_router.router)
 app.include_router(transcripts_router.router)
+app.include_router(corrections_router.router)
+app.include_router(ai_review_router.router)
 
 
 app.mount(

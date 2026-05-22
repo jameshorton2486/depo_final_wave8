@@ -539,6 +539,29 @@ def readback_search(payload: ReadbackRequest) -> ReadbackResult:
     )
 
 
+def _lexicon_config_for_job(job_row: dict) -> dict:
+    """Assemble the Stage X lexicon config for a job (Wave 14).
+
+    Reads the case's keyterms when available. Deterministic; never
+    raises -- a missing source simply contributes nothing.
+    """
+    cfg: dict = {}
+    case_id = job_row.get("case_id")
+    if not case_id:
+        return cfg
+    try:
+        from backend.db import repository as case_repo
+        case = case_repo.get_case(case_id)
+        if case:
+            # confirmed_spellings / keyterms travel on the case record
+            # when present; absent keys simply contribute nothing.
+            cfg["confirmed_spellings"] = case.get("confirmed_spellings") or {}
+            cfg["intake_keyterms"] = case.get("keyterms") or []
+    except Exception as exc:
+        logger.warning(f"lexicon config lookup failed: {exc}")
+    return cfg
+
+
 # ====================================================================
 # Export preview  (Wave 12) -- canonical "what will export" rendering
 # ====================================================================
@@ -566,6 +589,29 @@ def get_export_preview(job_id: str) -> dict:
 
     utterances = trepo.get_utterances(job_id)
     participants = trepo.get_participants(job_id)
+
+    # Wave 14: deterministic corrections run BEFORE structural render.
+    #   1. per-case persisted regex rules
+    #   2. Stage X merged lexicon (whole-word, possessive-aware)
+    # Both operate on a working copy -- RAW utterances are never mutated.
+    case_id_for_corr = row.get("case_id")
+    if case_id_for_corr:
+        try:
+            from backend.db import regex_rules_repo
+            from backend.corrections.regex_rules import apply_regex_rules
+            rules = regex_rules_repo.list_rules(case_id_for_corr)
+            if rules:
+                utterances, _ = apply_regex_rules(utterances, rules)
+        except Exception as exc:
+            logger.warning(f"export-preview regex step skipped: {exc}")
+    try:
+        from backend.lexicon.merge import merge_from_job_config
+        from backend.lexicon.stage_x import apply_stage_x
+        lexicon = merge_from_job_config(_lexicon_config_for_job(row))
+        if len(lexicon) > 0:
+            utterances, _ = apply_stage_x(utterances, lexicon)
+    except Exception as exc:
+        logger.warning(f"export-preview Stage X step skipped: {exc}")
 
     # Stage S (Wave 13): the structural renderer. Produces Q/A
     # segmentation, isolated objections, off-record tagging, and

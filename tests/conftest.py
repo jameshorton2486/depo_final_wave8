@@ -5,6 +5,7 @@ test runs do not touch the developer's real data/sqlite/depo_pro.db.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -13,6 +14,28 @@ from fastapi.testclient import TestClient
 
 from backend.config import settings
 from backend.db import migrations, seeds
+
+
+@pytest.fixture(autouse=True)
+def _force_offline_providers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Force the test suite to run against the OFFLINE providers.
+
+    The transcript-pipeline tests use a tiny synthetic audio file. With a
+    real DEEPGRAM_API_KEY set in the developer's .env, that fake file is
+    sent to the live Deepgram API, which correctly rejects it (HTTP 400
+    'corrupt or unsupported data') -- making ~6 tests fail for a reason
+    unrelated to the code under test.
+
+    This autouse fixture removes the provider keys from the environment
+    for every test, so transcription always uses the deterministic
+    offline fallback and the AI review layer is always inert. Test
+    outcomes no longer depend on whether a key happens to be set.
+
+    A test that specifically needs a key present can still set one with
+    its own monkeypatch.setenv -- that runs after this fixture.
+    """
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
 
 @pytest.fixture()

@@ -512,6 +512,11 @@
                 console.error("Could not load speaker panel:", err);
             }
             renderSpeakersList();
+            // Wave 16: load the AI review queue for this job.
+            if (typeof refreshAIReviewStatus === "function") refreshAIReviewStatus();
+            if (typeof loadAISuggestions === "function" && sp.jobId) {
+                loadAISuggestions(sp.jobId);
+            }
         }
 
         // Which cluster indices are not claimed by any participant.
@@ -773,6 +778,171 @@ window.changeAudioSpeed = changeAudioSpeed;
 window.skipAudio = skipAudio;
 window.renderSpeakersList = renderSpeakersList;
 window.renderCorrectionMemory = renderCorrectionMemory;
+
+// ============================================================
+// Wave 16 — AI review queue panel.
+// AI suggestions are advisory; nothing reaches the transcript
+// until the reporter approves it. The panel talks to the
+// /api/ai-review endpoints — all suggestion-gated.
+// ============================================================
+
+async function refreshAIReviewStatus() {
+    const el = document.getElementById('aiReviewStatus');
+    const btn = document.getElementById('aiSpeakerMapBtn');
+    const analyzeBtn = document.getElementById('aiAnalyzeBtn');
+    if (!el) return;
+    try {
+        const status = await window.api.getAIReviewStatus();
+        if (status.available) {
+            el.innerText = "● live";
+            el.className = "text-[9px] font-mono text-emerald-400";
+            if (btn) btn.disabled = false;
+            if (analyzeBtn) analyzeBtn.disabled = false;
+        } else {
+            el.innerText = "○ inert (no key)";
+            el.className = "text-[9px] font-mono text-slate-600";
+            if (btn) { btn.disabled = true; btn.title = "Set ANTHROPIC_API_KEY to enable."; }
+            if (analyzeBtn) { analyzeBtn.disabled = true; analyzeBtn.title = "Set ANTHROPIC_API_KEY to enable."; }
+        }
+    } catch (err) {
+        el.innerText = "unavailable";
+        el.className = "text-[9px] font-mono text-slate-600";
+    }
+}
+
+async function requestAIAnalysis() {
+    const sp = (typeof _w11State === "function") ? _w11State() : null;
+    const jobId = sp && sp.jobId;
+    if (!jobId) {
+        showToast("Load a transcript job before requesting AI analysis.", "amber");
+        return;
+    }
+    const btn = document.getElementById('aiAnalyzeBtn');
+    if (btn) { btn.disabled = true; btn.innerText = "Analyzing… (this can take a moment)"; }
+    try {
+        const res = await window.api.analyzeAIJob(jobId);
+        if (!res.available) {
+            showToast("AI review layer is inert — no API key configured.", "amber");
+        } else {
+            showToast(`AI analysis complete — ${res.generated} suggestion(s) queued.`, "emerald");
+            addProvenanceRecord("AI Review", `Ran AI analysis: ${res.generated} suggestion(s) generated.`, "ai");
+        }
+        await loadAISuggestions(jobId);
+    } catch (err) {
+        showToast(`AI analysis failed: ${err.message}`, "red");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = "✨ Analyze transcript (boundaries · garbles · flags)";
+        }
+    }
+}
+
+async function requestAISpeakerMap() {
+    const sp = (typeof _w11State === "function") ? _w11State() : null;
+    const jobId = sp && sp.jobId;
+    if (!jobId) {
+        showToast("Load a transcript job before requesting AI suggestions.", "amber");
+        return;
+    }
+    const btn = document.getElementById('aiSpeakerMapBtn');
+    if (btn) { btn.disabled = true; btn.innerText = "Asking AI…"; }
+    try {
+        const res = await window.api.generateAISpeakerMap(jobId);
+        if (!res.available) {
+            showToast("AI review layer is inert — no API key configured.", "amber");
+        } else if (!res.suggestion) {
+            showToast("AI did not return a usable speaker map.", "amber");
+        } else {
+            showToast("AI speaker-map suggestion added to the review queue.", "emerald");
+        }
+        await loadAISuggestions(jobId);
+    } catch (err) {
+        showToast(`AI request failed: ${err.message}`, "red");
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerText = "✨ Suggest speaker map"; }
+    }
+}
+
+async function loadAISuggestions(jobId) {
+    const list = document.getElementById('aiSuggestionsList');
+    if (!list) return;
+    try {
+        const res = await window.api.listAISuggestions(jobId);
+        const pending = (res.suggestions || []).filter(s => s.status === "pending");
+        list.innerHTML = "";
+        if (pending.length === 0) {
+            list.innerHTML = `<p class="text-[10px] text-slate-600 italic">No pending AI suggestions.</p>`;
+            return;
+        }
+        pending.forEach(s => list.appendChild(_aiSuggestionCard(s)));
+    } catch (err) {
+        list.innerHTML = `<p class="text-[10px] text-red-400">Could not load suggestions.</p>`;
+    }
+}
+
+function _aiSuggestionCard(s) {
+    const card = document.createElement('div');
+    card.className = "bg-slate-950/50 border border-slate-800 rounded-lg p-2 space-y-1.5";
+    // A suggestion that failed the four-part test is a flag, not an edit.
+    const badge = s.is_applicable_edit
+        ? `<span class="text-[8px] px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/25">EDIT</span>`
+        : `<span class="text-[8px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/25">FLAG — REVIEW</span>`;
+    let detail = "";
+    if (s.kind === "speaker_map" && s.payload && s.payload.speaker_map) {
+        const rows = Object.entries(s.payload.speaker_map)
+            .map(([i, role]) => `Speaker ${i} → ${role}`).join("<br>");
+        detail = `<div class="text-[9px] font-mono text-slate-400 mt-1">${rows}</div>`;
+    } else if (s.before_text || s.after_text) {
+        detail = `<div class="text-[9px] font-mono text-slate-400 mt-1">
+            <span class="text-red-400">${s.before_text || ""}</span> →
+            <span class="text-emerald-400">${s.after_text || ""}</span></div>`;
+    }
+    card.innerHTML = `
+        <div class="flex items-center justify-between">
+            <span class="text-[9px] font-bold uppercase tracking-wider text-slate-400">${s.kind}</span>
+            ${badge}
+        </div>
+        <p class="text-[10px] text-slate-300 leading-snug">${s.reason || ""}</p>
+        ${detail}
+        <div class="flex gap-1 pt-0.5">
+            <button onclick="approveAISuggestion('${s.suggestion_id}')"
+                class="flex-1 text-[9px] font-bold text-white bg-emerald-700 hover:bg-emerald-600 rounded py-1">Approve</button>
+            <button onclick="rejectAISuggestion('${s.suggestion_id}')"
+                class="flex-1 text-[9px] font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 rounded py-1">Reject</button>
+        </div>`;
+    return card;
+}
+
+async function approveAISuggestion(suggestionId) {
+    try {
+        await window.api.approveAISuggestion(suggestionId);
+        showToast("Suggestion approved.", "emerald");
+        addProvenanceRecord("AI Review", `Approved AI suggestion ${suggestionId.slice(0, 8)}.`, "user");
+        const sp = (typeof _w11State === "function") ? _w11State() : null;
+        if (sp && sp.jobId) await loadAISuggestions(sp.jobId);
+    } catch (err) {
+        showToast(`Approve failed: ${err.message}`, "red");
+    }
+}
+
+async function rejectAISuggestion(suggestionId) {
+    try {
+        await window.api.rejectAISuggestion(suggestionId);
+        showToast("Suggestion rejected.", "cyan");
+        const sp = (typeof _w11State === "function") ? _w11State() : null;
+        if (sp && sp.jobId) await loadAISuggestions(sp.jobId);
+    } catch (err) {
+        showToast(`Reject failed: ${err.message}`, "red");
+    }
+}
+
+window.refreshAIReviewStatus = refreshAIReviewStatus;
+window.requestAISpeakerMap = requestAISpeakerMap;
+window.requestAIAnalysis = requestAIAnalysis;
+window.loadAISuggestions = loadAISuggestions;
+window.approveAISuggestion = approveAISuggestion;
+window.rejectAISuggestion = rejectAISuggestion;
 // Wave 11 — editable speaker panel
 window.loadSpeakerPanel = loadSpeakerPanel;
 window.setParticipantField = setParticipantField;
