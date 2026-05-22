@@ -1,11 +1,14 @@
-"""Export service — Wave 18 orchestration.
+"""Export service — Wave 18 / Wave 19B orchestration.
 
-Renders the canonical ExportDocument and writes it to disk in the
-requested format and destination. The backend writes the file -- not
-the browser -- which is what fixes the PyWebView blob-download failure.
+Renders the canonical ExportDocument, applies the Geometry Layer
+(Wave 19B), and writes the result to disk in the requested format and
+destination. The backend writes the file -- not the browser -- which is
+what fixes the PyWebView blob-download failure.
 
-Architectural commitments (Wave 18):
+Architectural commitments (Wave 18 / 19B):
   * Export uses the SAME canonical renderer as the Export Preview.
+  * The Geometry Layer (apply_geometry) is called for DOCX and PDF so
+    those writers receive UFM-compliant layout measurements.
   * Every export is logged: format, destination, absolute path.
   * Generated documents are reproducible from the same transcript.
 """
@@ -20,6 +23,8 @@ from backend.export.docx_writer import write_docx
 from backend.export.pdf_writer import write_pdf
 from backend.export.rtf_writer import write_rtf
 from backend.export.txt_writer import write_txt
+from backend.geometry.engine import apply_geometry
+from backend.geometry.profile import TEXAS_UFM
 from backend.transcript.export_render import ExportDocument
 
 # Supported formats -> (writer, extension).
@@ -80,11 +85,29 @@ def export_document(
     *,
     explicit_path: str | None = None,
     case_dir: str | Path | None = None,
+    paginated_document=None,
 ) -> dict:
     """Render `doc` to `fmt` and write it to `destination`.
 
-    Returns {format, path, pages, lines}. Raises ValueError on an
-    unknown format or destination.
+    Parameters
+    ----------
+    doc
+        The canonical ExportDocument from render_export_document().
+    fmt
+        Export format: txt, ascii, docx, pdf, rtf.
+    destination
+        One of: 'downloads', 'case_folder', 'path'.
+    explicit_path
+        Required when destination='path'.
+    case_dir
+        Required when destination='case_folder'.
+    paginated_document
+        Optional PaginatedDocument from render_export_with_layout().
+        When provided, the Geometry Layer is applied for DOCX/PDF
+        writers to use UFM-compliant measurements and format boxes.
+
+    Returns {format, path, pages, lines}. Raises ValueError on unknown
+    format or destination.
     """
     fmt = (fmt or "").lower().strip()
     if fmt not in EXPORT_FORMATS:
@@ -97,7 +120,20 @@ def export_document(
     target = resolve_destination(
         destination, explicit_path, case_dir, filename)
 
-    written = writer(doc, target)
+    # Apply the Geometry Layer for writers that use physical measurements.
+    geo = None
+    if paginated_document is not None and fmt in ("docx", "pdf"):
+        try:
+            geo = apply_geometry(paginated_document, TEXAS_UFM)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Geometry layer failed, writing without: {exc}")
+
+    # Pass geo to writers that accept it; others receive only the doc.
+    if geo is not None and fmt in ("docx", "pdf"):
+        written = writer(doc, target, geo)
+    else:
+        written = writer(doc, target)
+
     logger.info(
         f"Export complete: format={fmt} destination={destination} "
         f"path={written}")

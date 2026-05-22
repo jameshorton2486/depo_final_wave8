@@ -13,6 +13,10 @@ jurisdictions can be added as additional profiles.
 
 See docs/wave19_ufm_layout.md.
 """
+from backend.geometry.engine import GeometryDocument, PageGeometry, apply_geometry
 from backend.geometry.profile import GeometryProfile, TEXAS_UFM
 
-__all__ = ["GeometryProfile", "TEXAS_UFM"]
+__all__ = [
+    "GeometryProfile", "TEXAS_UFM",
+    "apply_geometry", "GeometryDocument", "PageGeometry",
+]

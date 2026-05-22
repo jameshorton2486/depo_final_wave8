@@ -1,6 +1,7 @@
 """Wave 19 — Pagination Engine + Geometry Layer tests."""
 from __future__ import annotations
 
+from backend.geometry.engine import apply_geometry, GeometryDocument
 from backend.geometry.profile import TEXAS_UFM, TWIPS_PER_INCH
 from backend.pagination.flow_rules import can_start_on_page
 from backend.pagination.model import LINES_PER_PAGE, PhysicalLine
@@ -136,3 +137,67 @@ def test_texas_ufm_typography():
 def test_text_area_height_is_9_inches():
     # 11" - 1" top - 1" bottom = 9"
     assert TEXAS_UFM.text_area_height_twips == 9 * TWIPS_PER_INCH
+
+
+# --- geometry engine (apply_geometry) -----------------------------------
+
+def test_apply_geometry_returns_geometry_document():
+    doc = paginate([_rline(i, f"Line {i}.") for i in range(30)])
+    geo = apply_geometry(doc, TEXAS_UFM)
+    assert isinstance(geo, GeometryDocument)
+    assert geo.total_pages == doc.total_pages
+
+
+def test_geometry_document_page_count_matches():
+    lines = [_rline(i, f"Line {i}.") for i in range(60)]
+    doc = paginate(lines)
+    geo = apply_geometry(doc)
+    assert geo.total_pages == doc.total_pages
+
+
+def test_geometry_measurements_match_texas_ufm():
+    doc = paginate([_rline(0, "Test line.")])
+    geo = apply_geometry(doc, TEXAS_UFM)
+    pg = geo.pages[0]
+    # 1.25" left margin = 1800 twips = 90pt
+    assert abs(pg.margin_left_pt - 90.0) < 0.01
+    # 1.0" top margin = 1440 twips = 72pt
+    assert abs(pg.margin_top_pt - 72.0) < 0.01
+    # 8.5" page width = 12240 twips = 612pt
+    assert abs(pg.page_width_pt - 612.0) < 0.01
+    # 11" page height = 15840 twips = 792pt
+    assert abs(pg.page_height_pt - 792.0) < 0.01
+
+
+def test_geometry_font_from_profile():
+    doc = paginate([_rline(0, "Test.")])
+    geo = apply_geometry(doc, TEXAS_UFM)
+    assert geo.pages[0].font_name == "Courier New"
+    assert geo.pages[0].font_size_pt == 12.0
+    assert geo.pages[0].line_spacing_pt == 28.0
+
+
+def test_geometry_format_box_coords():
+    doc = paginate([_rline(0, "Test.")])
+    geo = apply_geometry(doc, TEXAS_UFM)
+    pg = geo.pages[0]
+    # Format box left = left margin, right = page_width - right_margin
+    assert abs(pg.format_box_left_pt - pg.margin_left_pt) < 0.01
+    assert abs(pg.format_box_right_pt - (pg.page_width_pt - pg.margin_right_pt)) < 0.01
+    assert abs(pg.format_box_top_pt - pg.margin_top_pt) < 0.01
+    assert abs(pg.format_box_bottom_pt - (pg.page_height_pt - pg.margin_bottom_pt)) < 0.01
+
+
+def test_geometry_slots_match_paginated_document():
+    lines = [_rline(i, f"Line {i}.") for i in range(30)]
+    doc = paginate(lines)
+    geo = apply_geometry(doc, TEXAS_UFM)
+    for p_idx, page in enumerate(doc.pages):
+        assert len(geo.pages[p_idx].slots) == LINES_PER_PAGE
+
+
+def test_geometry_empty_paginated_document():
+    doc = paginate([])
+    geo = apply_geometry(doc, TEXAS_UFM)
+    assert geo.total_pages == 1
+    assert len(geo.pages[0].slots) == LINES_PER_PAGE
