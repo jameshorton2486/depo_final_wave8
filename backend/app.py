@@ -10,6 +10,7 @@ from loguru import logger
 from backend.api import ai_review as ai_review_router
 from backend.api import cases as cases_router
 from backend.api import corrections as corrections_router
+from backend.api import depo_meta as depo_meta_router
 from backend.api import intake as intake_router
 from backend.api import nod as nod_router
 from backend.api import packaging as packaging_router
@@ -81,6 +82,7 @@ app.include_router(corrections_router.router)
 app.include_router(ai_review_router.router)
 app.include_router(snapshots_router.router)
 app.include_router(packaging_router.router)
+app.include_router(depo_meta_router.router)
 
 
 app.mount(
