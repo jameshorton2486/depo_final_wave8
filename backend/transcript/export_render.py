@@ -25,6 +25,18 @@ Pipeline position (Wave 12):
       -> export_render.py  (paginated formatted layout)   <-- this module
       -> Export preview  AND  DOCX/PDF export
 
+Wave 19A consolidation: the private `_wrap()` helper has been removed.
+Word-wrapping is now handled exclusively by `_wrap_text` from the
+canonical `backend.pagination.wrapping` module (one authority for
+word-wrap). Page allocation uses the Pagination Engine's model types
+(`Page`, `PageSlot`, `PhysicalLine`, `PaginatedDocument`) so the
+geometry layer can consume the same PaginatedDocument produced here.
+
+The pre-formatted stream entries (text already carries Q./A. prefix and
+indentation spaces) are placed as PhysicalLines directly -- the wrapping
+step from `wrap_render_line` is intentionally bypassed because the text
+is already wrapped to fit within body_width by `_body_lines_for`.
+
 Stages not yet built (Stage S structural, Stage X lexicon) slot in
 before this module; when they exist the preview reflects them with no
 change here.
@@ -32,10 +44,17 @@ change here.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+
+from backend.pagination.model import (
+    LINES_PER_PAGE,
+    Page,
+    PageSlot,
+    PhysicalLine,
+    PaginatedDocument,
+)
+from backend.pagination.wrapping import _wrap_text
 
 # Texas deposition layout standard.
-LINES_PER_PAGE = 25
 QA_INDENT = "    "        # four-space indent for Q./A. bodies
 SPEAKER_INDENT = ""       # colloquy speaker labels sit at the margin
 
@@ -97,32 +116,15 @@ class ExportDocument:
         }
 
 
-def _wrap(text: str, width: int) -> list[str]:
-    """Greedy word-wrap. Never splits a word; never drops a word."""
-    words = (text or "").split()
-    if not words:
-        return [""]
-    lines: list[str] = []
-    current = ""
-    for w in words:
-        candidate = w if not current else f"{current} {w}"
-        if len(candidate) <= width:
-            current = candidate
-        else:
-            if current:
-                lines.append(current)
-            current = w
-    if current:
-        lines.append(current)
-    return lines
-
-
 def _body_lines_for(working_line: dict, body_width: int) -> list[tuple[str, str]]:
     """Turn one WORKING line into (text, line_kind) physical-line tuples.
 
     Q/A lines get a "Q." / "A." prefix and a hanging indent on wrap.
     Colloquy gets an ALL-CAPS speaker label line, then the indented body.
     Flagged (unmapped) lines render with their raw label, kind 'flagged'.
+
+    Word-wrapping uses `_wrap_text` from `pagination.wrapping` -- the
+    single word-wrap authority for this codebase.
     """
     line_type = working_line.get("line_type", "colloquy")
     text = (working_line.get("text") or "").strip()
@@ -132,7 +134,7 @@ def _body_lines_for(working_line: dict, body_width: int) -> list[tuple[str, str]
 
     if line_type in ("Q", "A"):
         prefix = "Q.  " if line_type == "Q" else "A.  "
-        wrapped = _wrap(text, body_width - len(QA_INDENT) - len(prefix))
+        wrapped = _wrap_text(text, body_width - len(QA_INDENT) - len(prefix))
         for i, seg in enumerate(wrapped):
             if i == 0:
                 out.append((f"{QA_INDENT}{prefix}{seg}", "qa"))
@@ -144,16 +146,102 @@ def _body_lines_for(working_line: dict, body_width: int) -> list[tuple[str, str]
     if line_type == "flagged":
         head = f"{label}:" if label else "UNIDENTIFIED SPEAKER:"
         out.append((head, "flagged"))
-        for seg in _wrap(text, body_width - len(QA_INDENT)):
+        for seg in _wrap_text(text, body_width - len(QA_INDENT)):
             out.append((f"{QA_INDENT}{seg}", "flagged"))
         return out
 
     # colloquy -- named speaker label then indented body
     if label:
         out.append((f"{label}:", "colloquy"))
-    for seg in _wrap(text, body_width - len(QA_INDENT)):
+    for seg in _wrap_text(text, body_width - len(QA_INDENT)):
         out.append((f"{QA_INDENT}{seg}", "continuation" if out else "colloquy"))
     return out
+
+
+def _new_export_page(page_number: int) -> Page:
+    """An empty Pagination Engine Page with LINES_PER_PAGE numbered slots."""
+    return Page(
+        page_number=page_number,
+        page_id=f"page-{page_number:04d}",
+        slots=[PageSlot(slot_number=n)
+               for n in range(1, LINES_PER_PAGE + 1)],
+    )
+
+
+def _paginate_formatted_stream(
+    stream: list[tuple[str, str]],
+) -> PaginatedDocument:
+    """Allocate a pre-formatted (text, kind) stream into a PaginatedDocument.
+
+    Each stream entry becomes one PhysicalLine placed in a PageSlot.
+    The text is already wrapped and carries embedded indentation, so
+    `wrap_render_line` is intentionally NOT called here -- that step
+    would strip leading whitespace from the pre-formatted lines.
+
+    Returns a canonical PaginatedDocument (same type as paginate() in
+    `backend.pagination.paginator`) so the Geometry Layer can consume it.
+    """
+    pages: list[Page] = []
+    current = _new_export_page(1)
+    pages.append(current)
+    next_slot = 0
+
+    for i, (text, kind) in enumerate(stream):
+        if next_slot >= LINES_PER_PAGE:
+            current = _new_export_page(len(pages) + 1)
+            pages.append(current)
+            next_slot = 0
+        current.slots[next_slot].physical_line = PhysicalLine(
+            text=text,
+            tab_level=0,          # text carries its own indentation
+            line_type=kind,
+            source_render_line_id=f"export-{i}",
+        )
+        next_slot += 1
+
+    return PaginatedDocument(pages=pages, continuations=[])
+
+
+def _paginated_to_export_document(
+    paginated: PaginatedDocument,
+    *,
+    caption: str,
+    cause_number: str,
+    witness: str,
+    is_approximate: bool,
+) -> ExportDocument:
+    """Convert a PaginatedDocument to an ExportDocument."""
+    pages: list[ExportPage] = []
+    total_lines = 0
+    for page in paginated.pages:
+        export_page = ExportPage(page_number=page.page_number)
+        for slot in page.slots:
+            if not slot.is_empty:
+                phys = slot.physical_line
+                export_page.lines.append(ExportLine(
+                    page=page.page_number,
+                    line_number=slot.slot_number,
+                    text=phys.text,
+                    line_kind=phys.line_type,
+                ))
+                total_lines += 1
+            else:
+                export_page.lines.append(ExportLine(
+                    page=page.page_number,
+                    line_number=slot.slot_number,
+                    text="",
+                    line_kind="blank",
+                ))
+        pages.append(export_page)
+    return ExportDocument(
+        caption=caption,
+        cause_number=cause_number,
+        witness=witness,
+        pages=pages,
+        total_pages=len(pages),
+        total_lines=total_lines,
+        is_approximate=is_approximate,
+    )
 
 
 def render_export_document(
@@ -189,6 +277,36 @@ def render_export_document(
     -------
     ExportDocument -- pages of numbered lines. Preview and export share it.
     """
+    doc, _ = render_export_with_layout(
+        working_lines,
+        caption=caption,
+        cause_number=cause_number,
+        witness=witness,
+        proceedings_date=proceedings_date,
+        examining_attorney_label=examining_attorney_label,
+        body_width=body_width,
+        is_approximate=is_approximate,
+    )
+    return doc
+
+
+def render_export_with_layout(
+    working_lines: list[dict],
+    *,
+    caption: str = "",
+    cause_number: str = "",
+    witness: str = "",
+    proceedings_date: str = "",
+    examining_attorney_label: str = "",
+    body_width: int = 64,
+    is_approximate: bool = False,
+) -> tuple[ExportDocument, PaginatedDocument | None]:
+    """Render the canonical paginated export document and return the
+    intermediate PaginatedDocument for use by the Geometry Layer.
+
+    Returns (ExportDocument, PaginatedDocument). When the input is empty
+    the second element is None.
+    """
     # --- assemble the logical line stream -----------------------------
     stream: list[tuple[str, str]] = []
 
@@ -212,41 +330,30 @@ def render_export_document(
             stream.append((text, kind))
         stream.append(("", "blank"))   # blank line between utterances
 
-    # --- paginate into 25-line pages ----------------------------------
-    pages: list[ExportPage] = []
-    page_no = 1
-    line_no = 0
-    current = ExportPage(page_number=page_no)
-    total_lines = 0
+    if not stream:
+        return (ExportDocument(
+            caption=caption,
+            cause_number=cause_number,
+            witness=witness,
+            pages=[],
+            total_pages=0,
+            total_lines=0,
+            is_approximate=is_approximate,
+        ), None)
 
-    for (text, kind) in stream:
-        if line_no >= LINES_PER_PAGE:
-            pages.append(current)
-            page_no += 1
-            line_no = 0
-            current = ExportPage(page_number=page_no)
-        line_no += 1
-        total_lines += 1
-        current.lines.append(ExportLine(
-            page=page_no, line_number=line_no, text=text, line_kind=kind))
+    # --- paginate using the Pagination Engine's model types -----------
+    paginated = _paginate_formatted_stream(stream)
 
-    if current.lines:
-        # pad the final page to a full 25 lines for layout consistency
-        while line_no < LINES_PER_PAGE:
-            line_no += 1
-            current.lines.append(ExportLine(
-                page=page_no, line_number=line_no, text="", line_kind="blank"))
-        pages.append(current)
-
-    return ExportDocument(
+    # --- convert to ExportDocument ------------------------------------
+    export_doc = _paginated_to_export_document(
+        paginated,
         caption=caption,
         cause_number=cause_number,
         witness=witness,
-        pages=pages,
-        total_pages=len(pages),
-        total_lines=total_lines,
         is_approximate=is_approximate,
     )
+
+    return export_doc, paginated
 
 
 def render_export_to_dict(working_lines: list[dict], **kwargs) -> dict:
