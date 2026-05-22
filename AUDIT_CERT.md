@@ -105,7 +105,7 @@ At `assemble` and `certify` time, `_build_metadata_for_job(job_id, override)` in
 ## Phase completion tracking
 
 - [x] Phase 0 — Audit
-- [ ] Phase 1 — Data model (schema_v9 + depo_meta_repo + tests)
-- [ ] Phase 2 — API (depo_meta router + tests)
-- [ ] Phase 3 — Wire into packaging + no-placeholder test
-- [ ] Phase 4 — UI form on Stage 5 Certify screen
+- [x] Phase 1 — Data model (schema_v9 + depo_meta_repo + tests)
+- [x] Phase 2 — API (depo_meta router + tests)
+- [x] Phase 3 — Wire into packaging + no-placeholder test
+- [x] Phase 4 — UI form on Stage 5 Certify screen
