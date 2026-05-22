@@ -9,7 +9,50 @@
                     </div>
 
                     <h2 class="text-2xl font-bold text-white mb-2">Final Case Certification</h2>
-                    <p class="text-sm text-slate-400 mb-6 max-w-sm mx-auto">Lock all working lines, compile final SHA checksums, and sign the official provenance trail. Edits cannot be made past this point.</p>
+                    <p class="text-sm text-slate-400 mb-4 max-w-sm mx-auto">Lock all working lines, compile final SHA checksums, and sign the official provenance trail. Edits cannot be made past this point.</p>
+
+                    <!-- Certificate Data Fields -->
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-left space-y-3 mb-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Reporter's Certificate Fields</p>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Signature / Examination</label>
+                                <select id="certExaminationDisposition" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+                                    <option value="">-- select --</option>
+                                    <option value="waived">waived</option>
+                                    <option value="retained">retained</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Volume #</label>
+                                <input id="certVolume" type="text" value="1" placeholder="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Officer's Charges ($)</label>
+                                <input id="certChargesAmount" type="text" placeholder="e.g. 450.00" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-400 mb-1">Charges Billed To</label>
+                                <input id="certChargesParty" type="text" placeholder="e.g. Plaintiff" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">Certificate Service Date</label>
+                            <input id="certServiceDate" type="text" placeholder="e.g. June 5, 2026" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-1">Time Used Per Party (one per line: Party - H:MM)</label>
+                            <textarea id="certTimePerParty" rows="2" placeholder="Plaintiff Counsel - 1:30&#10;Defense Counsel - 0:45" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono resize-none"></textarea>
+                        </div>
+
+                        <div id="certMetaSaveStatus" class="text-xs text-slate-500 text-right hidden">Saved.</div>
+                    </div>
 
                     <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-left space-y-3 mb-6 select-none">
                         <label class="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer">
