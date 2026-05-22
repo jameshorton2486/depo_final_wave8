@@ -452,287 +452,31 @@
 
         // Sidebar rendering drivers
         // ============================================================
-        // Wave 11 — editable Workspace speaker panel.
-        // One row per participant; unmapped clusters shown as flagged
-        // rows beneath. Edits are local until "Assign speakers" applies
-        // them through the canonical backend renderer.
+        // Workspace job context.
+        // The Workspace no longer hosts speaker assignment — that now
+        // lives solely on Step 2B (Speaker Mapping). This keeps just the
+        // active transcript job id so the AI Review Queue knows which
+        // job it is operating on.
         // ============================================================
 
-        // The nine deposition roles (mirror of speaker_mapping.ROLES).
-        const W11_ROLES = [
-            ["examining_attorney", "Examining Attorney"],
-            ["witness", "Witness"],
-            ["defending_attorney", "Defending Attorney"],
-            ["co_counsel", "Co-Counsel"],
-            ["court_reporter", "Court Reporter"],
-            ["videographer", "Videographer"],
-            ["interpreter", "Interpreter"],
-            ["off_record", "Off the Record"],
-            ["other", "Other"],
-        ];
-        const W11_HONORIFICS = ["", "MR", "MS", "MRS", "DR"];
-        const W11_NAMED_ROLES = new Set(
-            ["examining_attorney", "witness", "defending_attorney", "co_counsel"]);
-
-        function _w11State() {
-            // Lazily attach Wave 11 working state to the global state object.
-            if (!state.speakerPanel) {
-                state.speakerPanel = {
-                    jobId: null,
-                    participants: [],     // working copy, editable
-                    candidateNames: [],
-                    detectedIndices: [],  // all cluster indices from RAW
-                    dirty: false,
-                };
+        function _workspaceJob() {
+            // Lazily attach the workspace job context to global state.
+            if (!state.workspaceJob) {
+                state.workspaceJob = { jobId: null };
             }
-            return state.speakerPanel;
+            return state.workspaceJob;
         }
 
-        // Load the panel for a job from the speaker-mapping API.
-        async function loadSpeakerPanel(jobId) {
-            const sp = _w11State();
-            sp.jobId = jobId;
-            try {
-                const view = await window.api.getSpeakerMapping(jobId);
-                sp.participants = (view.participants || []).map(p => ({
-                    participant_id: p.participant_id || null,
-                    name: p.name || "",
-                    role: p.role || "other",
-                    speaker_indices: p.speaker_indices || [],
-                    honorific: p.honorific || "",
-                    name_source: p.name_source || null,
-                    is_prefill: p.is_prefill || 0,
-                    sort_order: p.sort_order || 0,
-                }));
-                sp.candidateNames = view.candidate_names || [];
-                sp.detectedIndices = (view.detected_speakers || [])
-                    .map(d => d.speaker_index);
-                sp.dirty = false;
-            } catch (err) {
-                console.error("Could not load speaker panel:", err);
-            }
-            renderSpeakersList();
+        // Bind the Workspace to a transcript job and load its AI review
+        // queue. Speaker assignment happens on Step 2B before this runs.
+        async function loadWorkspaceJobContext(jobId) {
+            const wj = _workspaceJob();
+            wj.jobId = jobId;
             // Wave 16: load the AI review queue for this job.
             if (typeof refreshAIReviewStatus === "function") refreshAIReviewStatus();
-            if (typeof loadAISuggestions === "function" && sp.jobId) {
-                loadAISuggestions(sp.jobId);
+            if (typeof loadAISuggestions === "function" && jobId) {
+                loadAISuggestions(jobId);
             }
-        }
-
-        // Which cluster indices are not claimed by any participant.
-        function _unmappedClusters(sp) {
-            const claimed = new Set();
-            sp.participants.forEach(p =>
-                (p.speaker_indices || []).forEach(i => claimed.add(i)));
-            return sp.detectedIndices.filter(i => !claimed.has(i));
-        }
-
-        function _markDirty() {
-            const sp = _w11State();
-            sp.dirty = true;
-            const btn = document.getElementById('assignSpeakersBtn');
-            if (btn) { btn.disabled = false; btn.innerText = "Assign speakers & re-render"; }
-        }
-
-        function renderSpeakersList() {
-            const list = document.getElementById('speakersList');
-            if (!list) return;
-            const sp = _w11State();
-            list.innerHTML = "";
-
-            if (!sp.jobId) {
-                // No transcript job context yet — fall back to a simple
-                // read of the speaker labels present in the rendered lines.
-                const distinct = [...new Set(state.transcriptLines
-                    .map(l => l.speaker)
-                    .filter(s => s && s !== "SYSTEM" && s !== "SYSTEM INDEXER"))];
-                distinct.forEach(spk => {
-                    const item = document.createElement('div');
-                    item.className = "flex items-center justify-between bg-slate-950/40 p-2 rounded-lg border border-slate-800/80";
-                    item.innerHTML = `
-                        <div class="flex items-center gap-2 font-mono">
-                            <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                            <span class="text-xs font-bold text-white">${spk}</span>
-                        </div>
-                        <span class="text-[9px] text-slate-500">Speaker Block</span>`;
-                    list.appendChild(item);
-                });
-                return;
-            }
-
-            // One row per participant.
-            sp.participants.forEach((p, i) => {
-                list.appendChild(_participantRow(p, i));
-            });
-
-            // Unmapped clusters — dashed, greyed, flagged.
-            _unmappedClusters(sp).forEach(idx => {
-                const row = document.createElement('div');
-                row.className = "flex items-center justify-between bg-slate-950/60 p-2 rounded-lg border border-dashed border-amber-700/50";
-                row.innerHTML = `
-                    <div class="flex items-center gap-2 font-mono">
-                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                        <span class="text-xs font-bold text-amber-300">Speaker ${idx}</span>
-                    </div>
-                    <span class="text-[9px] text-amber-500/80 font-semibold">UNMAPPED — FLAGGED</span>`;
-                list.appendChild(row);
-            });
-        }
-
-        function _participantRow(p, i) {
-            const sp = _w11State();
-            const row = document.createElement('div');
-            row.className = "bg-slate-950/40 p-2 rounded-lg border border-slate-800/80 space-y-1.5";
-
-            const isNamed = W11_NAMED_ROLES.has(p.role);
-            const clusterLabel = (p.speaker_indices && p.speaker_indices.length)
-                ? p.speaker_indices.map(x => `Speaker ${x}`).join(" + ")
-                : "no clusters";
-            const suggestedBadge = p.name_source === "prefill_deterministic"
-                ? `<span class="text-[8px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/25">PREFILL — REVIEW</span>`
-                : "";
-
-            const roleOpts = W11_ROLES.map(([v, lbl]) =>
-                `<option value="${v}" ${v === p.role ? "selected" : ""}>${lbl}</option>`).join("");
-
-            // Name dropdown: candidate labels + Other.
-            const nameOpts = [`<option value="">— name —</option>`]
-                .concat(sp.candidateNames.map(n =>
-                    `<option value="${n}" ${n === p.name ? "selected" : ""}>${n}</option>`))
-                .concat([`<option value="__other__" ${
-                    p.name && !sp.candidateNames.includes(p.name) ? "selected" : ""
-                }>Other…</option>`]).join("");
-
-            const honOpts = W11_HONORIFICS.map(h =>
-                `<option value="${h}" ${h === p.honorific ? "selected" : ""}>${h || "—"}</option>`).join("");
-
-            row.innerHTML = `
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-1.5 font-mono">
-                        <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                        <span class="text-[10px] font-bold text-white">${clusterLabel}</span>
-                        ${suggestedBadge}
-                    </div>
-                    <button onclick="removeSpeakerParticipant(${i})"
-                        class="text-slate-600 hover:text-red-400 text-xs leading-none" title="Remove participant">&#x2715;</button>
-                </div>
-                <select onchange="setParticipantField(${i}, 'role', this.value)"
-                    class="w-full bg-slate-900 border border-slate-800 rounded text-[10px] text-white px-1.5 py-1">
-                    ${roleOpts}
-                </select>
-                <div class="flex gap-1">
-                    ${isNamed ? `<select onchange="setParticipantField(${i}, 'honorific', this.value)"
-                        class="bg-slate-900 border border-slate-800 rounded text-[10px] text-white px-1 py-1 w-14">
-                        ${honOpts}</select>` : ""}
-                    <select onchange="setParticipantName(${i}, this.value)"
-                        class="flex-1 bg-slate-900 border border-slate-800 rounded text-[10px] text-white px-1.5 py-1">
-                        ${nameOpts}
-                    </select>
-                </div>
-                ${p.name && !sp.candidateNames.includes(p.name) ? `
-                <input type="text" value="${p.name}" placeholder="Type label, e.g. MR. SMITH"
-                    onchange="setParticipantField(${i}, 'name', this.value)"
-                    class="w-full bg-slate-900 border border-slate-700 rounded text-[10px] text-white px-1.5 py-1">` : ""}
-            `;
-            return row;
-        }
-
-        // --- row mutations -----------------------------------------
-        function setParticipantField(i, field, value) {
-            const sp = _w11State();
-            if (!sp.participants[i]) return;
-            sp.participants[i][field] = value;
-            if (field === "name") sp.participants[i].name_source = "user_confirmed";
-            _markDirty();
-            renderSpeakersList();
-        }
-
-        function setParticipantName(i, value) {
-            const sp = _w11State();
-            if (!sp.participants[i]) return;
-            if (value === "__other__") {
-                sp.participants[i].name = sp.participants[i].name || " ";
-            } else {
-                sp.participants[i].name = value;
-            }
-            sp.participants[i].name_source = "user_confirmed";
-            _markDirty();
-            renderSpeakersList();
-        }
-
-        function addSpeakerParticipant() {
-            const sp = _w11State();
-            sp.participants.push({
-                participant_id: null, name: "", role: "other",
-                speaker_indices: [], honorific: "", name_source: null,
-                is_prefill: 0, sort_order: sp.participants.length,
-            });
-            _markDirty();
-            renderSpeakersList();
-        }
-
-        function removeSpeakerParticipant(i) {
-            const sp = _w11State();
-            if (!sp.participants[i]) return;
-            if (!confirm("Remove this participant? Its speakers become unmapped — no testimony is deleted.")) return;
-            sp.participants.splice(i, 1);
-            _markDirty();
-            renderSpeakersList();
-        }
-
-        // --- Assign speakers & re-render ---------------------------
-        async function applySpeakerAssignments() {
-            const sp = _w11State();
-            if (!sp.jobId) {
-                showToast("No transcript job loaded to assign speakers for.", "amber");
-                return;
-            }
-            const btn = document.getElementById('assignSpeakersBtn');
-            if (btn) { btn.disabled = true; btn.innerText = "Assigning…"; }
-            try {
-                const result = await window.api.applySpeakerMapping(
-                    sp.jobId, sp.participants);
-                sp.dirty = false;
-                // Re-render the transcript body from the backend's
-                // canonical rendered lines — the single source of truth.
-                if (result.lines && typeof applyRenderedLines === "function") {
-                    applyRenderedLines(result.lines);
-                }
-                if (btn) btn.innerText = "Assigned";
-                const msg = result.unmapped_cluster_count > 0
-                    ? `Re-rendered — ${result.unmapped_cluster_count} cluster(s) still unmapped & flagged.`
-                    : `Re-rendered ${result.participant_count} participant(s) — all clusters mapped.`;
-                showToast(msg, result.unmapped_cluster_count > 0 ? "amber" : "emerald");
-                addProvenanceRecord("Speaker Mapping",
-                    `Assigned speakers: ${result.participant_count} participant(s), ${result.unmapped_cluster_count} unmapped.`,
-                    "user");
-            } catch (err) {
-                if (btn) { btn.disabled = false; btn.innerText = "Assign speakers & re-render"; }
-                showToast(`Assign failed: ${err.message}`, "red");
-            }
-        }
-
-        // Replace transcript body lines with backend-rendered WorkingLines.
-        function applyRenderedLines(lines) {
-            state.transcriptLines = lines.map((ln, idx) => ({
-                id: (ln.utterance_ids && ln.utterance_ids[0]) || `line-${idx}`,
-                index: idx + 1,
-                speaker: ln.speaker_label || "",
-                speakerIndex: ln.speaker_index,
-                text: ln.text || "",
-                type: ln.line_type === "Q" ? "Q"
-                    : ln.line_type === "A" ? "A"
-                    : ln.line_type === "flagged" ? "colloquy" : "colloquy",
-                flagged: !!ln.flagged,
-                confidence: ln.flagged ? 0.5 : 0.95,
-                hasSuggestion: !!ln.flagged,
-                duration: 0.0,
-                startTime: ln.start_time,
-            }));
-            if (state.transcriptLines.length) {
-                state.focusedLineId = state.transcriptLines[0].id;
-            }
-            if (typeof compileAndRenderTranscript === "function") compileAndRenderTranscript();
         }
 
         function renderCorrectionMemory() {
@@ -776,7 +520,6 @@ window.removeFillerWordsGlobal = removeFillerWordsGlobal;
 window.toggleAudioPlayback = toggleAudioPlayback;
 window.changeAudioSpeed = changeAudioSpeed;
 window.skipAudio = skipAudio;
-window.renderSpeakersList = renderSpeakersList;
 window.renderCorrectionMemory = renderCorrectionMemory;
 
 // ============================================================
@@ -811,7 +554,7 @@ async function refreshAIReviewStatus() {
 }
 
 async function requestAIAnalysis() {
-    const sp = (typeof _w11State === "function") ? _w11State() : null;
+    const sp = (typeof _workspaceJob === "function") ? _workspaceJob() : null;
     const jobId = sp && sp.jobId;
     if (!jobId) {
         showToast("Load a transcript job before requesting AI analysis.", "amber");
@@ -839,7 +582,7 @@ async function requestAIAnalysis() {
 }
 
 async function requestAISpeakerMap() {
-    const sp = (typeof _w11State === "function") ? _w11State() : null;
+    const sp = (typeof _workspaceJob === "function") ? _workspaceJob() : null;
     const jobId = sp && sp.jobId;
     if (!jobId) {
         showToast("Load a transcript job before requesting AI suggestions.", "amber");
@@ -919,7 +662,7 @@ async function approveAISuggestion(suggestionId) {
         await window.api.approveAISuggestion(suggestionId);
         showToast("Suggestion approved.", "emerald");
         addProvenanceRecord("AI Review", `Approved AI suggestion ${suggestionId.slice(0, 8)}.`, "user");
-        const sp = (typeof _w11State === "function") ? _w11State() : null;
+        const sp = (typeof _workspaceJob === "function") ? _workspaceJob() : null;
         if (sp && sp.jobId) await loadAISuggestions(sp.jobId);
     } catch (err) {
         showToast(`Approve failed: ${err.message}`, "red");
@@ -930,7 +673,7 @@ async function rejectAISuggestion(suggestionId) {
     try {
         await window.api.rejectAISuggestion(suggestionId);
         showToast("Suggestion rejected.", "cyan");
-        const sp = (typeof _w11State === "function") ? _w11State() : null;
+        const sp = (typeof _workspaceJob === "function") ? _workspaceJob() : null;
         if (sp && sp.jobId) await loadAISuggestions(sp.jobId);
     } catch (err) {
         showToast(`Reject failed: ${err.message}`, "red");
@@ -943,11 +686,5 @@ window.requestAIAnalysis = requestAIAnalysis;
 window.loadAISuggestions = loadAISuggestions;
 window.approveAISuggestion = approveAISuggestion;
 window.rejectAISuggestion = rejectAISuggestion;
-// Wave 11 — editable speaker panel
-window.loadSpeakerPanel = loadSpeakerPanel;
-window.setParticipantField = setParticipantField;
-window.setParticipantName = setParticipantName;
-window.addSpeakerParticipant = addSpeakerParticipant;
-window.removeSpeakerParticipant = removeSpeakerParticipant;
-window.applySpeakerAssignments = applySpeakerAssignments;
-window.applyRenderedLines = applyRenderedLines;
+// Workspace job context (binds the AI review queue to a job)
+window.loadWorkspaceJobContext = loadWorkspaceJobContext;

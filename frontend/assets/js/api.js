@@ -317,6 +317,14 @@
             // Wave 12: export preview for a transient unsaved transcript.
             return _fetch('POST', '/transcripts/export-preview/fallback', payload);
         },
+        exportTranscript(jobId, fmt, destination, explicitPath) {
+            // Wave 18: backend renders and writes a real file to disk.
+            return _fetch('POST', `/transcripts/jobs/${encodeURIComponent(jobId)}/export`, {
+                fmt: fmt,
+                destination: destination,
+                explicit_path: explicitPath || null,
+            });
+        },
         // --- AI review layer (Wave 15b / 16) ------------------------
         getAIReviewStatus() {
             return _fetch('GET', '/ai-review/status');

@@ -401,12 +401,13 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
         state.transcriptLines = lines;
         state.focusedLineId = lines[0].id;
         if (typeof compileAndRenderTranscript === "function") compileAndRenderTranscript();
-        if (typeof renderSpeakersList === "function") renderSpeakersList();
         if (typeof updateStatsBar === "function") updateStatsBar();
-        // Wave 11: load the editable speaker panel for the first job.
-        // (Single-job batches are the common case; multi-job uses job 1.)
-        if (typeof loadSpeakerPanel === "function" && jobIds.length > 0) {
-            loadSpeakerPanel(jobIds[0]);
+        // Bind the Workspace to the first job so its AI review queue
+        // knows which job it operates on. Speaker assignment is done on
+        // Step 2B. (Single-job batches are the common case; multi-job
+        // uses job 1.)
+        if (typeof loadWorkspaceJobContext === "function" && jobIds.length > 0) {
+            loadWorkspaceJobContext(jobIds[0]);
         }
     }
 }

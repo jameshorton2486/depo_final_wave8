@@ -14,6 +14,7 @@ from backend.api import intake as intake_router
 from backend.api import nod as nod_router
 from backend.api import reporters as reporters_router
 from backend.api import sessions as sessions_router
+from backend.api import snapshots as snapshots_router
 from backend.api import transcripts as transcripts_router
 from backend.config import settings
 from backend.database.init_db import initialize_database
@@ -77,6 +78,7 @@ app.include_router(intake_router.router)
 app.include_router(transcripts_router.router)
 app.include_router(corrections_router.router)
 app.include_router(ai_review_router.router)
+app.include_router(snapshots_router.router)
 
 
 app.mount(

@@ -191,7 +191,6 @@
 
         // Complete state rendering dispatch
         function renderAllStateComponents() {
-            if (document.getElementById('speakersList')) renderSpeakersList();
             if (document.getElementById('correctionsMemoryContainer')) renderCorrectionMemory();
             if (document.getElementById('provenanceLogContainer')) renderProvenanceTimeline();
             if (document.getElementById('transcriptLinesContainer')) compileAndRenderTranscript();
@@ -357,7 +356,6 @@
                     refreshServerTranscriptJobs && refreshServerTranscriptJobs();
                 } else if (stageNum === 3) {
                     compileAndRenderTranscript && compileAndRenderTranscript();
-                    renderSpeakersList && renderSpeakersList();
                     renderCorrectionMemory && renderCorrectionMemory();
                     renderProvenanceTimeline && renderProvenanceTimeline();
                     updateStatsBar && updateStatsBar();

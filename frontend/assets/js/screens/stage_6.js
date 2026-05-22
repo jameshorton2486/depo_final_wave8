@@ -129,58 +129,66 @@ function renderExportPreview(doc) {
     }
 }
 
-// Export uses the SAME rendered document as the preview.
+// Wave 18: export is done by the BACKEND, which writes a real file to
+// disk and returns the path. This replaces the old browser-blob
+// download, which silently failed inside the PyWebView desktop shell.
 async function triggerExportAction() {
     const formatSelect = document.getElementById('exportFormatSelect');
+    const destSelect = document.getElementById('exportDestinationSelect');
     const format = formatSelect ? formatSelect.value : 'txt';
-    const mimeMap = {
-        docx: 'text/plain', pdf: 'text/plain',
-        txt: 'text/plain', rtf: 'application/rtf',
-    };
+    const destination = destSelect ? destSelect.value : 'downloads';
 
-    // Always render fresh so the file equals the current transcript.
-    await refreshExportPreview();
-    if (!_exportDoc) {
-        if (typeof showToast === "function") showToast("Nothing to export — preview failed.", "red");
+    const jobId = _activeJobId();
+    if (!jobId) {
+        if (typeof showToast === "function")
+            showToast("No transcript loaded to export.", "red");
         return;
     }
 
-    let payload = "";
-    if (_exportDoc.caption) payload += `${_exportDoc.caption}\n`;
-    if (_exportDoc.cause_number) payload += `CAUSE NO. ${_exportDoc.cause_number}\n`;
-    if (_exportDoc.witness) payload += `CERTIFIED DEPOSITION OF ${_exportDoc.witness.toUpperCase()}\n`;
-    payload += "\n";
-
-    (_exportDoc.pages || []).forEach(page => {
-        payload += `${"=".repeat(55)}\nPAGE ${page.page_number}\n${"=".repeat(55)}\n`;
-        (page.lines || []).forEach(l => {
-            payload += `${String(l.line_number).padEnd(3, ' ')}| ${l.text}\n`;
-        });
-        payload += "\n";
-    });
-
-    if (state.exhibits && state.exhibits.length) {
-        payload += `\nEXHIBIT INDEX APPEND:\n`;
-        state.exhibits.forEach(ex => {
-            payload += `Exhibit ${ex.num}: ${ex.title} · Offered by ${ex.attorney} · Page ${ex.page}, Line ${ex.line}\n`;
-        });
+    let explicitPath = null;
+    if (destination === 'path') {
+        // "Choose folder each time" -- ask the desktop shell for a
+        // native folder/save dialog. pywebview exposes this; if it is
+        // unavailable (e.g. running in a plain browser) fall back to
+        // the Downloads folder.
+        if (window.pywebview && window.pywebview.api
+                && window.pywebview.api.choose_save_folder) {
+            try {
+                explicitPath = await window.pywebview.api.choose_save_folder();
+            } catch (e) { explicitPath = null; }
+            if (!explicitPath) {
+                if (typeof showToast === "function")
+                    showToast("Export cancelled — no folder chosen.", "amber");
+                return;
+            }
+        } else {
+            if (typeof showToast === "function")
+                showToast("Folder picker unavailable here — saving to Downloads.", "amber");
+        }
     }
-    payload += `\n\nDIGITAL SIGNATURE ID SEAL: ${(state.caseInfo && state.caseInfo.signature) || "CSR"}\n`;
 
-    const blob = new Blob([payload], { type: mimeMap[format] || 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const slug = (_exportDoc.caption || "transcript")
-        .replace(/[^a-z0-9]+/gi, "_").slice(0, 40);
-    a.download = `${slug}_Certified_Transcript.${format}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    if (typeof showToast === "function") {
-        showToast(`Certified transcript (.${format}) downloaded — matches preview.`, "emerald");
+    const btn = document.getElementById('exportActionBtn');
+    if (btn) { btn.disabled = true; }
+    try {
+        const res = await window.api.exportTranscript(
+            jobId, format, explicitPath ? 'path' : destination, explicitPath);
+        if (typeof showToast === "function") {
+            showToast(`Saved: ${res.path}`, "emerald");
+        }
+        if (typeof addProvenanceRecord === "function") {
+            addProvenanceRecord("Export",
+                `Exported ${res.format.toUpperCase()} (${res.pages} page(s)) to ${res.path}`, "user");
+        }
+        // Surface the saved path in the status line so it does not vanish.
+        const statusLine = document.getElementById('previewStatusLine');
+        if (statusLine) {
+            statusLine.innerText = `Saved ${res.format.toUpperCase()} — ${res.path}`;
+        }
+    } catch (err) {
+        if (typeof showToast === "function")
+            showToast(`Export failed: ${err.message}`, "red");
+    } finally {
+        if (btn) { btn.disabled = false; }
     }
 }
 

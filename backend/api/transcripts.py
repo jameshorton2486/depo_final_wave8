@@ -567,18 +567,18 @@ def _lexicon_config_for_job(job_row: dict) -> dict:
 # ====================================================================
 
 
-@router.get("/jobs/{job_id}/export-preview")
-def get_export_preview(job_id: str) -> dict:
-    """Render the canonical paginated export document for one job.
+def _build_export_document(job_id: str):
+    """Build the canonical ExportDocument for a job.
 
     This is the SAME pipeline the real DOCX/PDF export uses:
 
         RAW -> participant mapping -> render.py (WORKING lines)
+            -> regex + Stage X corrections -> Stage S structural render
             -> export_render.py (paginated layout)
 
-    The Export screen's "Refresh Preview" button calls this, so the
-    preview always reflects the current WORKING transcript state --
-    speaker mapping, Q/A typing, and (as later waves land) corrections.
+    Returns an ExportDocument, or None if the job does not exist.
+    Shared by the export-preview endpoint and the Wave 18 export
+    endpoint so preview and export can never diverge.
     """
     row = trepo.get_job(job_id)
     if row is None:
@@ -676,7 +676,87 @@ def get_export_preview(job_id: str) -> dict:
         examining_attorney_label=examining_label,
         is_approximate=False,
     )
-    return doc.to_dict()
+    return doc
+
+
+@router.get("/jobs/{job_id}/export-preview")
+def get_export_preview(job_id: str) -> dict:
+    """Render the canonical paginated export document for one job.
+
+    The Export screen's "Refresh Preview" button calls this. It is the
+    authoritative "this is what would export right now" view -- it and
+    the real export share `_build_export_document`, so they cannot
+    diverge.
+    """
+    return _build_export_document(job_id).to_dict()
+
+
+class ExportRequest(BaseModel):
+    fmt: str = "txt"
+    destination: str = "downloads"   # downloads | case_folder | path
+    explicit_path: str | None = None
+
+
+@router.post("/jobs/{job_id}/export")
+def export_transcript(job_id: str, payload: ExportRequest) -> dict:
+    """Wave 18 -- render the job and write a real file to disk.
+
+    The backend writes the file (fixing the PyWebView blob-download
+    failure). Uses the SAME canonical document as the preview. Returns
+    the absolute path written.
+    """
+    from backend.export import export_service
+
+    doc = _build_export_document(job_id)   # 404s on unknown job
+
+    # Resolve the case's workspace directory, if any.
+    case_dir = None
+    row = trepo.get_job(job_id)
+    case_id = row.get("case_id") if row else None
+    if case_id:
+        try:
+            from backend.db import repository as case_repo
+            case = case_repo.get_case(case_id)
+            if case and case.get("workspace_dir"):
+                case_dir = case["workspace_dir"]
+        except Exception as exc:
+            logger.warning(f"export case-dir lookup failed: {exc}")
+
+    try:
+        result = export_service.export_document(
+            doc, payload.fmt, payload.destination,
+            explicit_path=payload.explicit_path, case_dir=case_dir)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Export failed for {job_id}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Export failed: {exc}")
+
+    # Wave 18.5: every export captures an EXPORT snapshot and records
+    # an export reference, so "which transcript state did this file
+    # come from" is always answerable. Defensive -- a snapshot failure
+    # never fails the export itself.
+    snapshot_id = None
+    try:
+        import datetime
+        from backend.transcript_state import snapshot_service
+        snap = snapshot_service.create_snapshot(
+            job_id, category="EXPORT",
+            note=f"Auto-snapshot on {result['format'].upper()} export")
+        snapshot_service.record_export(
+            snap.snapshot_id,
+            export_id=result["filename"],
+            export_format=result["format"],
+            export_timestamp=datetime.datetime.now().isoformat(),
+        )
+        snapshot_id = snap.snapshot_id
+    except Exception as exc:
+        logger.warning(f"export snapshot skipped for {job_id}: {exc}")
+
+    return {"job_id": job_id, "snapshot_id": snapshot_id, **result}
 
 
 class ExportPreviewFallbackRequest(BaseModel):

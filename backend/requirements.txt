@@ -10,6 +10,10 @@ pywebview>=5.4,<6.0
 pdfplumber>=0.11,<1.0
 python-multipart>=0.0.12,<1.0
 
+# Wave 18 — real document generation for transcript export.
+python-docx>=1.1,<2.0
+reportlab>=4.0,<5.0
+
 # Deepgram transcription uses the stdlib (urllib) REST client in
 # backend/deepgram/client.py — no SDK dependency is required.
 # Set DEEPGRAM_API_KEY in your environment/.env to enable real ASR;
