@@ -110,3 +110,16 @@ def created_case(client, sample_case_payload) -> dict:
     res = client.post("/api/cases", json=sample_case_payload)
     assert res.status_code == 201
     return res.json()
+
+
+@pytest.fixture()
+def sample_job(client) -> str:
+    """Create a minimal transcript job and return its job_id.
+
+    Used by packaging API tests that need a real job to exist in the DB.
+    The job has no utterances/participants (empty transcript) so packaging
+    will produce a zero-body-page package, which is valid for API tests.
+    """
+    from backend.transcript import repository as trepo
+    job = trepo.create_job({"source_filename": "test_session.mp3"})
+    return job["job_id"]

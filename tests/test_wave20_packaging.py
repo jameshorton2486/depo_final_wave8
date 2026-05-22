@@ -329,3 +329,159 @@ def test_integrity_detects_wrong_snapshot_binding():
 def test_manifest_hash_recomputes_to_stored_value():
     pkg = _assemble()
     assert compute_manifest_hash(pkg.manifest) == pkg.manifest.manifest_hash
+
+
+# --- API endpoint tests -----------------------------------------------
+
+def test_packaging_list_unknown_job_returns_empty(client):
+    res = client.get("/api/packages/jobs/no-such-job")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["count"] == 0
+    assert body["packages"] == []
+
+
+def test_packaging_get_unknown_package_404(client):
+    res = client.get("/api/packages/pkg-does-not-exist")
+    assert res.status_code == 404
+
+
+def test_packaging_certify_unknown_package_404(client):
+    res = client.post("/api/packages/no-pkg/certify",
+                      json={"metadata": {}})
+    assert res.status_code == 404
+
+
+def test_packaging_assemble_unknown_job_404(client):
+    res = client.post("/api/packages/jobs/no-job",
+                      json={"snapshot_id": "s1", "metadata": {}})
+    assert res.status_code == 404
+
+
+def test_packaging_assemble_unknown_snapshot_404(client, sample_job):
+    """Assembling from a non-existent snapshot returns 404."""
+    res = client.post(f"/api/packages/jobs/{sample_job}",
+                      json={"snapshot_id": "no-such-snap", "metadata": {}})
+    assert res.status_code == 404
+
+
+def test_packaging_assemble_unlocked_snapshot_400(client, sample_job):
+    """Assembling from an unlocked snapshot must fail with 400."""
+    # Create a snapshot (unlocked by default)
+    snap_res = client.post(f"/api/snapshots/jobs/{sample_job}",
+                           json={"category": "MANUAL"})
+    assert snap_res.status_code == 200
+    snap_id = snap_res.json()["snapshot_id"]
+
+    res = client.post(f"/api/packages/jobs/{sample_job}",
+                      json={"snapshot_id": snap_id, "metadata": {}})
+    assert res.status_code == 400
+    assert "not locked" in res.json()["detail"].lower()
+
+
+def test_packaging_assemble_list_get_workflow(client, sample_job):
+    """Create snapshot, lock it, assemble a DRAFT package, list and get it."""
+    # 1. Create and lock a snapshot
+    snap_res = client.post(f"/api/snapshots/jobs/{sample_job}",
+                           json={"category": "CERTIFIED"})
+    assert snap_res.status_code == 200
+    snap_id = snap_res.json()["snapshot_id"]
+
+    lock_res = client.post(f"/api/snapshots/{snap_id}/lock")
+    assert lock_res.status_code == 200
+
+    # 2. Assemble package
+    metadata = {
+        "cause_number": "2024-CI-00001",
+        "caption": "Test v. Test",
+        "court": "288th Judicial District Court",
+        "witness_name": "John Doe",
+        "reporter_name": "Jane Smith",
+        "reporter_csr_number": "TX-99999",
+        "proceedings_date": "May 22, 2026",
+    }
+    assemble_res = client.post(
+        f"/api/packages/jobs/{sample_job}",
+        json={"snapshot_id": snap_id, "metadata": metadata})
+    assert assemble_res.status_code == 200
+    body = assemble_res.json()
+    package_id = body["package_id"]
+    assert body["package_state"] == "DRAFT"
+    assert "generation_report" in body
+
+    # 3. List packages for the job
+    list_res = client.get(f"/api/packages/jobs/{sample_job}")
+    assert list_res.status_code == 200
+    assert list_res.json()["count"] == 1
+
+    # 4. Get the full package
+    get_res = client.get(f"/api/packages/{package_id}")
+    assert get_res.status_code == 200
+    full = get_res.json()
+    assert full["package_id"] == package_id
+    assert "package" in full
+
+
+def test_packaging_certify_empty_body_blocked(client, sample_job):
+    """Certifying a package with no body pages returns 422.
+
+    An empty transcript (no utterances → body_page_count=0) cannot be
+    certified. This is a validation rule, not an API bug.
+    """
+    snap_res = client.post(f"/api/snapshots/jobs/{sample_job}",
+                           json={"category": "CERTIFIED"})
+    snap_id = snap_res.json()["snapshot_id"]
+    client.post(f"/api/snapshots/{snap_id}/lock")
+
+    metadata = {
+        "cause_number": "2024-CI-00001",
+        "caption": "Test v. Test",
+        "court": "288th Judicial District Court",
+        "witness_name": "John Doe",
+        "reporter_name": "Jane Smith",
+        "reporter_csr_number": "TX-99999",
+        "proceedings_date": "May 22, 2026",
+    }
+    assemble_res = client.post(
+        f"/api/packages/jobs/{sample_job}",
+        json={"snapshot_id": snap_id, "metadata": metadata})
+    assert assemble_res.status_code == 200
+    pkg_id = assemble_res.json()["package_id"]
+
+    # Certify -- should fail because body_page_count == 0
+    certify_res = client.post(
+        f"/api/packages/{pkg_id}/certify",
+        json={"metadata": metadata})
+    assert certify_res.status_code == 422
+    assert "body" in certify_res.json()["detail"].lower()
+
+
+def test_packaging_certify_invalid_metadata_422(client, sample_job):
+    """Certifying with incomplete metadata returns 422."""
+    snap_res = client.post(f"/api/snapshots/jobs/{sample_job}",
+                           json={"category": "CERTIFIED"})
+    snap_id = snap_res.json()["snapshot_id"]
+    client.post(f"/api/snapshots/{snap_id}/lock")
+
+    # Assemble with full metadata
+    metadata = {
+        "cause_number": "2024-CI-00002",
+        "caption": "Test v. Test",
+        "court": "288th Judicial District Court",
+        "witness_name": "John Doe",
+        "reporter_name": "Jane Smith",
+        "reporter_csr_number": "TX-99998",
+        "proceedings_date": "May 22, 2026",
+    }
+    assemble_res = client.post(
+        f"/api/packages/jobs/{sample_job}",
+        json={"snapshot_id": snap_id, "metadata": metadata})
+    assert assemble_res.status_code == 200
+    pkg_id = assemble_res.json()["package_id"]
+
+    # Certify with missing required field
+    bad_meta = {k: v for k, v in metadata.items() if k != "reporter_csr_number"}
+    certify_res = client.post(
+        f"/api/packages/{pkg_id}/certify",
+        json={"metadata": bad_meta})
+    assert certify_res.status_code == 422
