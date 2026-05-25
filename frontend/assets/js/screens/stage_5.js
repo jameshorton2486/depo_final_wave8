@@ -10,8 +10,13 @@
             }).filter(e => e.party);
         }
 
+        function _activeJobId() {
+            const ids = (state && state.activeTranscriptJobIds) || [];
+            return ids.length > 0 ? ids[0] : null;
+        }
+
         async function _saveCertFields() {
-            const jobId = state && state.jobId;
+            const jobId = _activeJobId();
             if (!jobId) return;
 
             const disposition = document.getElementById('certExaminationDisposition').value;
@@ -47,7 +52,7 @@
         }
 
         async function loadCertFields() {
-            const jobId = state && state.jobId;
+            const jobId = _activeJobId();
             if (!jobId) return;
             try {
                 const res = await fetch(`/api/depo-meta/jobs/${jobId}`);
@@ -86,7 +91,7 @@
                 return;
             }
 
-            const jobId = state && state.jobId;
+            const jobId = _activeJobId();
             if (!jobId) {
                 showToast("No active job — cannot certify.", "red");
                 return;
