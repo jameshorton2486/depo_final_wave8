@@ -114,6 +114,29 @@ def test_export_reference_appends(client):
     assert got.export_refs[0]["export_format"] == "docx"
 
 
+def test_snapshot_rollback_restores_speaker_indices(sample_job_with_content):
+    from backend.transcript import repository as trepo
+    from backend.transcript_state import snapshot_service
+
+    original = trepo.get_participants(sample_job_with_content)
+    snap = snapshot_service.create_snapshot(sample_job_with_content, category="MANUAL")
+
+    trepo.save_participants(sample_job_with_content, [
+        {"name": "Changed Witness", "role": "witness", "speaker_indices": [0, 1]},
+    ])
+    changed = trepo.get_participants(sample_job_with_content)
+    assert changed != original
+
+    restored_snap = snapshot_service.rollback_to(sample_job_with_content, snap.snapshot_id)
+    assert restored_snap is not None
+
+    restored = trepo.get_participants(sample_job_with_content)
+    assert restored[0]["speaker_indices"] == [0]
+    assert restored[1]["speaker_indices"] == [1]
+    assert restored[0]["role"] == "examining_attorney"
+    assert restored[1]["role"] == "witness"
+
+
 # --- endpoints -------------------------------------------------------
 
 def test_create_snapshot_unknown_job_404(client):

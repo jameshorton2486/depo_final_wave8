@@ -48,9 +48,27 @@
                             </div>
                         </div>
 
-                        <!-- Speaker assignment lives on Step 2B (Speaker
-                             Mapping), not here — the Workspace panel was
-                             removed as redundant. -->
+                        <!-- Authoritative speaker mapping now lives here in
+                             Stage 3. Raw diarization is preserved; the
+                             reporter maps raw speaker ids to participants. -->
+                        <div class="font-sans">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Speaker Mapping</span>
+                                <span id="workspaceSpeakerMappingStatus" class="text-[9px] font-mono text-slate-600">idle</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 mb-2 leading-relaxed">Stage 3 is the sole speaker authority. Save names and roles here to bind raw diarization clusters to the working transcript without altering timestamps or speaker ids.</p>
+                            <div class="bg-slate-950 rounded-xl p-3 border border-slate-800 space-y-3 max-h-72 overflow-y-auto" id="workspaceSpeakerMappingRoot">
+                                <p class="text-[10px] text-slate-600 italic">Load a transcript job from Stage 2 to review diarization and assign speakers.</p>
+                            </div>
+                            <div class="flex items-center justify-end gap-2 mt-2">
+                                <button id="workspaceSpeakerMappingReloadBtn" onclick="loadWorkspaceSpeakerMapping()" class="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-[10px] font-semibold text-slate-300 hover:text-white transition-all">
+                                    Reload Mapping
+                                </button>
+                                <button id="workspaceSpeakerMappingSaveBtn" onclick="saveWorkspaceSpeakerMapping()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-semibold transition-all">
+                                    Save Speaker Mapping
+                                </button>
+                            </div>
+                        </div>
 
                         <!-- AI Review Queue (Wave 16) -->
                         <div class="font-sans">

@@ -245,4 +245,5 @@ def test_workspace_endpoint_creates_tree(tmp_root, monkeypatch):
     assert body["workspace_state"] == "draft"
     assert Path(body["session_dir"]).exists()
     assert Path(body["keyterms_path"]).exists()
-    assert Path(body["keyterms_path"]).name == "keyterms.json"
+    assert Path(body["keyterms_path"]).parent.name == "api-case-1"
+    assert Path(body["workspace_keyterms_path"]).parent.name == "raw"

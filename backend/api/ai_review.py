@@ -62,12 +62,13 @@ def generate_speaker_map(job_id: str) -> dict:
     utterances = trepo.get_utterances(job_id)
     witness_name = ""
     case_id = row.get("case_id")
+    session_id = row.get("session_id")
     if case_id:
         try:
             from backend.db import repository as case_repo
-            case = case_repo.get_case(case_id)
-            if case:
-                witness_name = case.get("witness_name") or ""
+            session = case_repo.get_session(session_id) if session_id else None
+            if session:
+                witness_name = session.get("witness_name") or ""
         except Exception as exc:
             logger.warning(f"witness lookup failed: {exc}")
 

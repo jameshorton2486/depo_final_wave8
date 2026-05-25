@@ -46,12 +46,17 @@ def _capture_state(job_id: str) -> dict:
     try:
         participants = trepo.get_participants(job_id)
         state["speaker_mapping"] = [
-            {"speaker_index": p.get("speaker_index"),
+            {"participant_id": p.get("participant_id"),
+             "speaker_indices": p.get("speaker_indices") or [],
              "role": p.get("role"),
              "name": p.get("name"),
+             "name_source": p.get("name_source"),
              "honorific": p.get("honorific")}
             for p in participants
         ]
+        logger.info(
+            f"snapshot capture speaker mapping for {job_id}: {len(state['speaker_mapping'])} participant(s)"
+        )
     except Exception as exc:
         logger.warning(f"snapshot: speaker_mapping capture failed: {exc}")
         state["speaker_mapping"] = []
@@ -156,12 +161,17 @@ def rollback_to(job_id: str, snapshot_id: str,
     if mapping:
         try:
             trepo.save_participants(job_id, [
-                {"speaker_index": m.get("speaker_index"),
+                {"participant_id": m.get("participant_id"),
+                 "speaker_indices": m.get("speaker_indices") or [],
                  "role": m.get("role"),
                  "name": m.get("name"),
+                 "name_source": m.get("name_source"),
                  "honorific": m.get("honorific")}
                 for m in mapping
             ])
+            logger.info(
+                f"snapshot rollback restored speaker mapping for {job_id}: {len(mapping)} participant(s)"
+            )
         except Exception as exc:
             logger.warning(f"rollback: participant restore failed: {exc}")
 

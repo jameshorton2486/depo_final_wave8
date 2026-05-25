@@ -2,7 +2,9 @@
 # Python
 # =========================
 __pycache__/
+**/__pycache__/
 *.py[cod]
+*.pyo
 *$py.class
 .venv/
 venv/
@@ -45,6 +47,7 @@ output/
 temp/
 cache/
 tmp/
+.codex_tmp/
 
 # =========================
 # FFmpeg / Audio Temp
@@ -74,9 +77,6 @@ npm-debug.log*
 *.sqlite3-journal
 *.sqlite3-wal
 *.sqlite3-shm
-
-data/cases/*
-!data/cases/.gitkeep
 
 data/sqlite/*.db
 data/sqlite/*.db-journal
@@ -116,6 +116,7 @@ MY_CHEATS.txt
 .pytest_cache/
 .coverage
 htmlcov/
+coverage/
 
 # =========================
 # Misc

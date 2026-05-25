@@ -50,6 +50,7 @@ from backend.models.transcripts import (
     TranscriptUtterance,
     TranscriptWord,
 )
+from backend.services import intake_store
 from backend.services import speaker_mapping
 from backend.services import correction_trigger
 from backend.transcript import ingest
@@ -123,16 +124,40 @@ async def upload_transcript(
             detail=f"File too large ({len(contents)} bytes; max {MAX_UPLOAD_BYTES}).",
         )
 
-    # Validate the case FK up front for a clean 400 instead of a later
-    # silent SET NULL. An absent case_id is allowed (transcribe-first).
-    if case_id:
-        from backend.db import repository as l1_repo
+    # Stage 2 requires a bound case + session so transcript ingestion always
+    # carries authoritative Stage 1 metadata.
+    if not case_id or not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Save Stage 1 Intake before uploading transcripts. "
+                "A valid case and session are required."
+            ),
+        )
 
-        if l1_repo.get_case(case_id) is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Case {case_id} does not exist.",
-            )
+    from backend.db import repository as l1_repo
+
+    if l1_repo.get_case(case_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Case {case_id} does not exist.",
+        )
+    session_row = l1_repo.get_session(session_id)
+    if session_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Session {session_id} does not exist.",
+        )
+    if session_row.get("case_id") != case_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Session {session_id} does not belong to case {case_id}."
+            ),
+        )
+    logger.info(
+        f"Transcript upload bound to case {case_id}, session {session_id}, file {filename}"
+    )
 
     # Create the job row first so we have the job_id for the audio path.
     job = trepo.create_job(
@@ -269,6 +294,11 @@ def get_speaker_mapping(job_id: str) -> SpeakerMappingView:
     else:
         participants = speaker_mapping.prefill_participants(speakers, utterances)
         is_prefill = True
+    logger.info(
+        f"Speaker mapping load for {job_id}: "
+        f"{len(detected)} raw speaker(s), {len(participants)} participant row(s), "
+        f"prefill={is_prefill}"
+    )
 
     # Wave 11: deterministic candidate-name dropdown. Built from case
     # metadata when available; always includes the fixed court-officer
@@ -299,23 +329,39 @@ def _build_candidate_names_for_job(job_row: dict) -> list[str]:
     nod_metadata: dict = {}
     reporter_name = None
     case_id = job_row.get("case_id")
+    session_id = job_row.get("session_id")
     if case_id:
         try:
             from backend.db import repository as case_repo
             case = case_repo.get_case(case_id)
-            if case:
-                attorneys = []
-                for a in (case.get("attorneys") or []):
-                    attorneys.append({
-                        "name": a.get("name"),
-                        "honorific": a.get("honorific"),
-                        "role": a.get("role") or "examining_attorney",
-                    })
-                nod_metadata = {
-                    "attorneys": attorneys,
-                    "witness": {"name": case.get("witness_name")},
-                }
-                reporter_name = case.get("reporter_name")
+            session = case_repo.get_session(session_id) if session_id else None
+            intake = intake_store.read_stage1_record(case_id)
+            parser_meta = intake.get("parser_metadata") or {}
+            appearances = parser_meta.get("appearances") or []
+            attorneys = []
+            for a in appearances:
+                role = "examining_attorney"
+                if a.get("side") == "defendant":
+                    role = "defending_attorney"
+                attorneys.append({
+                    "name": a.get("name"),
+                    "honorific": a.get("honorific"),
+                    "role": role,
+                })
+            witness_name = ""
+            if session:
+                witness_name = session.get("witness_name") or ""
+                reporter_id = session.get("reporter_id")
+                if reporter_id:
+                    reporter = case_repo.get_reporter(reporter_id)
+                    if reporter:
+                        reporter_name = reporter.get("full_name")
+            if not witness_name:
+                witness_name = parser_meta.get("witness_name") or ""
+            nod_metadata = {
+                "attorneys": attorneys,
+                "witness": {"name": witness_name},
+            }
         except Exception as exc:  # never let metadata lookup break the page
             logger.warning(f"candidate-names metadata lookup failed: {exc}")
     return speaker_mapping.build_candidate_names(nod_metadata, reporter_name)
@@ -552,11 +598,12 @@ def _lexicon_config_for_job(job_row: dict) -> dict:
     try:
         from backend.db import repository as case_repo
         case = case_repo.get_case(case_id)
+        intake = intake_store.read_stage1_record(case_id)
         if case:
-            # confirmed_spellings / keyterms travel on the case record
-            # when present; absent keys simply contribute nothing.
             cfg["confirmed_spellings"] = case.get("confirmed_spellings") or {}
-            cfg["intake_keyterms"] = case.get("keyterms") or []
+        cfg["intake_keyterms"] = intake_store.keyterm_strings(
+            intake.get("keyterms") or []
+        )
     except Exception as exc:
         logger.warning(f"lexicon config lookup failed: {exc}")
     return cfg
@@ -667,6 +714,11 @@ def _build_export_document(job_id: str):
         if p.get("role") == "witness" and p.get("name"):
             witness = p.get("name")
             break
+    logger.info(
+        f"Export speaker resolution for {job_id}: "
+        f"{len(participants)} participant(s), witness='{witness or 'unset'}', "
+        f"examining='{examining_label or 'unset'}'"
+    )
 
     # BLOCKER-5 fix: use the layout-aware render so the live export
     # path receives the PaginatedDocument the Geometry Layer needs.
@@ -723,6 +775,12 @@ def export_transcript(job_id: str, payload: ExportRequest) -> dict:
             case = case_repo.get_case(case_id)
             if case and case.get("workspace_dir"):
                 case_dir = case["workspace_dir"]
+            if not case_dir:
+                intake = intake_store.read_stage1_record(case_id)
+                sessions = (intake.get("workspace") or {}).get("sessions") or {}
+                if sessions:
+                    any_binding = next(iter(sessions.values()))
+                    case_dir = any_binding.get("case_dir")
         except Exception as exc:
             logger.warning(f"export case-dir lookup failed: {exc}")
 

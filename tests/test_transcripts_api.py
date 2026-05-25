@@ -7,12 +7,34 @@ redirects SQLite and the data root into a tmp_path.
 from __future__ import annotations
 
 
-def _upload(client, filename="morning_session.mp3", seq=0, case_id=None):
+def _create_bound_case_session(client):
+    case = client.post("/api/cases", json={
+        "case_number_value": "2024-CI-28593",
+        "caption_full": "SARAH JENKINS vs. NEXUS PHARMA INC.",
+        "judicial_district": "101st Judicial District",
+        "county": "Dallas County",
+        "state": "Texas",
+    }).json()
+    session = client.post("/api/sessions", json={
+        "case_id": case["case_id"],
+        "scheduled_at": "2026-05-19T10:00:00-05:00",
+        "scheduled_end_at": "2026-05-19T12:30:00-05:00",
+        "witness_name": "Dr. Donald Leifer",
+        "location_address": "201 Main Street, Fort Worth, TX 76102",
+        "custodial_attorney_name": "Ms. Elizabeth R. Flora, Esq.",
+        "requesting_party_name": "Vance & Partners LLP",
+    }).json()
+    return case, session
+
+
+def _upload(client, filename="morning_session.mp3", seq=0, case_id=None, session_id=None):
     """Upload a small fake media file and return the created job dict."""
     fake_audio = b"fake-media-bytes-for-offline-fallback" * 40
-    data = {"sequence_index": str(seq)}
-    if case_id:
-        data["case_id"] = case_id
+    if not case_id or not session_id:
+        case, session = _create_bound_case_session(client)
+        case_id = case["case_id"]
+        session_id = session["session_id"]
+    data = {"sequence_index": str(seq), "case_id": case_id, "session_id": session_id}
     res = client.post(
         "/api/transcripts/upload",
         files={"file": (filename, fake_audio, "audio/mpeg")},
@@ -48,9 +70,11 @@ def test_rejects_unsupported_file_type(client):
 
 
 def test_rejects_empty_file(client):
+    case, session = _create_bound_case_session(client)
     res = client.post(
         "/api/transcripts/upload",
         files={"file": ("clip.wav", b"", "audio/wav")},
+        data={"case_id": case["case_id"], "session_id": session["session_id"]},
     )
     assert res.status_code == 400
 
@@ -98,9 +122,15 @@ def test_readback_empty_query_rejected(client):
 
 
 def test_jobs_list_and_case_filter(client, created_case):
-    _upload(client, filename="a.mp3", seq=0, case_id=created_case["case_id"])
-    _upload(client, filename="b.mp3", seq=1, case_id=created_case["case_id"])
-    _upload(client, filename="orphan.mp3", seq=0)  # no case
+    session = client.post("/api/sessions", json={
+        "case_id": created_case["case_id"],
+        "scheduled_at": "2026-05-19T10:00:00-05:00",
+        "scheduled_end_at": "2026-05-19T12:30:00-05:00",
+        "witness_name": "Dr. Donald Leifer",
+    }).json()
+    _upload(client, filename="a.mp3", seq=0, case_id=created_case["case_id"], session_id=session["session_id"])
+    _upload(client, filename="b.mp3", seq=1, case_id=created_case["case_id"], session_id=session["session_id"])
+    _upload(client, filename="orphan.mp3", seq=0)
 
     all_jobs = client.get("/api/transcripts/jobs").json()
     assert all_jobs["count"] == 3
@@ -122,3 +152,14 @@ def test_delete_job(client):
 
 def test_get_missing_job_is_404(client):
     assert client.get("/api/transcripts/jobs/does-not-exist").status_code == 404
+
+
+def test_upload_requires_saved_case_and_session(client):
+    fake_audio = b"fake-media-bytes-for-offline-fallback" * 40
+    res = client.post(
+        "/api/transcripts/upload",
+        files={"file": ("morning_session.mp3", fake_audio, "audio/mpeg")},
+        data={"sequence_index": "0"},
+    )
+    assert res.status_code == 400
+    assert "Save Stage 1 Intake before uploading transcripts" in res.json()["detail"]

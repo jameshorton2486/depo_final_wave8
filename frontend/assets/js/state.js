@@ -8,6 +8,23 @@
             caseId: null,
             sessionId: null,
             reporterId: null,
+            stage1: {
+                rawIntakeNotes: "",
+                keytermEntries: [],
+                parserMetadata: {
+                    appearances: [],
+                    speaker_hints: [],
+                    deepgram_config: {},
+                    jurisdiction_type: "texas_state",
+                    location_type: "unknown",
+                    detected_types: [],
+                    warnings: [],
+                    field_sources: {},
+                },
+                workspace: {
+                    sessions: {},
+                },
+            },
 
             // Texas UFM Mandatory Schema Mapping (Binds directly to verified input UI)
             caseInfo: {
@@ -63,6 +80,16 @@
             // transcriptJobs holds the persisted jobs loaded from the
             // backend; readbackTimer debounces the read-back search.
             transcriptJobs: [],
-            readbackTimer: null
+            readbackTimer: null,
+
+            // Transcript workflow bindings.
+            activeTranscriptJobIds: [],
+            workspaceJob: {
+                jobId: null,
+            },
+            workspaceSpeakerMapping: {
+                jobs: [],
+                assignments: {},
+            }
         };
 window.state = state;

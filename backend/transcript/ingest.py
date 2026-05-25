@@ -26,6 +26,7 @@ from loguru import logger
 
 from backend.config import settings
 from backend.deepgram import client as deepgram_client
+from backend.services import intake_store
 from backend.preprocessing import probe
 from backend.transcript import assembler, packet
 from backend.transcript import repository as trepo
@@ -45,22 +46,27 @@ def _transcripts_dir(job_id: str) -> Path:
 def load_keyterms(case_id: str | None) -> list[str]:
     """Load the case's Deepgram keyterms if a keyterms.json exists.
 
-    Stage 1 writes data/cases/{case_id}/keyterms.json. Missing file is
-    fine -- ingestion just runs without vocabulary boosting.
+    Stage 1 writes the authoritative keyterms file under
+    data/cases/{case_id}/keyterms.json. Missing file is fine -- ingestion
+    just runs without vocabulary boosting.
     """
     if not case_id:
         return []
-    path = settings.data_root / "cases" / case_id / "keyterms.json"
+    path = intake_store.keyterms_path(case_id)
     if not path.exists():
+        logger.info(f"No Stage 1 keyterms file found for case {case_id}; continuing without keyterms")
         return []
     try:
         import json
 
         data = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            return list(data.get("keyterms") or [])
-        if isinstance(data, list):
-            return list(data)
+        terms = intake_store.keyterm_strings(
+            data.get("keyterms") if isinstance(data, dict) else data
+        )
+        logger.info(
+            f"Loaded {len(terms)} Stage 1 keyterm(s) for case {case_id} from {path}"
+        )
+        return terms
     except Exception as exc:  # best-effort; never block ingestion
         logger.warning(f"Could not read keyterms for case {case_id}: {exc}")
     return []
@@ -107,6 +113,12 @@ def _run_pipeline(job: dict) -> None:
     normalized = assembler.normalize(raw_response)
     if probed_duration and not normalized.duration_seconds:
         normalized.duration_seconds = probed_duration
+    logger.info(
+        f"Diarization complete for {job_id}: "
+        f"{normalized.speaker_count} speaker(s), "
+        f"{normalized.utterance_count} utterance(s), "
+        f"source={transcription_source}"
+    )
 
     # ---- 4. Write packets -------------------------------------------
     out_dir = _transcripts_dir(job_id)

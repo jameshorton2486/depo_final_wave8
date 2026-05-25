@@ -27,6 +27,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 
 from loguru import logger
@@ -86,11 +87,13 @@ def _content_type_for(path: Path) -> str:
 KEYTERM_LIMIT = 100
 
 
-def normalize_keyterms(terms: list[str] | None) -> list[str]:
+def normalize_keyterms(terms: list[str] | list[dict] | None) -> list[str]:
     """Clean, de-duplicate, and cap a keyterm list for Deepgram Nova-3."""
     seen: set[str] = set()
     out: list[str] = []
     for raw in terms or []:
+        if isinstance(raw, Mapping):
+            raw = raw.get("term")
         term = " ".join(str(raw).split()).strip()
         if not term:
             continue
@@ -122,7 +125,10 @@ def transcribe_file(audio_path: str | Path, keyterms: list[str] | None = None) -
     failed and surface a message.
     """
     audio_path = Path(audio_path)
-    keyterms = keyterms or []
+    keyterms = normalize_keyterms(keyterms or [])
+    logger.info(
+        f"Preparing Deepgram request for {audio_path.name} with {len(keyterms)} keyterm(s)"
+    )
 
     if api_key_present():
         logger.info(f"Deepgram: transcribing {audio_path.name} via REST API")

@@ -450,28 +450,244 @@
             focusLineRow(state.transcriptLines[state.playbackLineIdx].id);
         }
 
+        function _speakerMapState() {
+            if (!state.workspaceSpeakerMapping) {
+                state.workspaceSpeakerMapping = { jobs: [], assignments: {} };
+            }
+            return state.workspaceSpeakerMapping;
+        }
+
+        function _speakerMapEsc(value) {
+            return String(value == null ? "" : value)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+        }
+
+        function _speakerMapStatus(text, tone) {
+            const el = document.getElementById('workspaceSpeakerMappingStatus');
+            if (!el) return;
+            el.innerText = text;
+            const map = {
+                idle: "text-[9px] font-mono text-slate-600",
+                loading: "text-[9px] font-mono text-indigo-400",
+                ready: "text-[9px] font-mono text-emerald-400",
+                warning: "text-[9px] font-mono text-amber-400",
+            };
+            el.className = map[tone] || map.idle;
+        }
+
+        function _speakerMapRoleOptions(roles, current) {
+            return (roles || []).map(r =>
+                `<option value="${_speakerMapEsc(r.value)}"${r.value === current ? " selected" : ""}>${_speakerMapEsc(r.label)}</option>`
+            ).join("");
+        }
+
+        function setWorkspaceSpeakerAssignment(jobId, speakerIndex, field, value) {
+            const sm = _speakerMapState();
+            if (!sm.assignments[jobId]) sm.assignments[jobId] = {};
+            if (!sm.assignments[jobId][speakerIndex]) {
+                sm.assignments[jobId][speakerIndex] = { role: "other", name: "", honorific: "" };
+            }
+            sm.assignments[jobId][speakerIndex][field] = value;
+        }
+
+        function _buildWorkspaceParticipants(jobId) {
+            const sm = _speakerMapState();
+            const assigns = sm.assignments[jobId] || {};
+            const groups = {};
+            let order = 0;
+            Object.keys(assigns).forEach(idxStr => {
+                const idx = parseInt(idxStr, 10);
+                const a = assigns[idxStr] || {};
+                const name = (a.name || "").trim();
+                const role = a.role || "other";
+                const honorific = (a.honorific || "").trim();
+                const key = `${role}||${name.toLowerCase()}||${honorific.toUpperCase()}`;
+                if (!groups[key]) {
+                    groups[key] = {
+                        name: name || null,
+                        role: role,
+                        honorific: honorific || null,
+                        speaker_indices: [],
+                        sort_order: order++,
+                    };
+                }
+                groups[key].speaker_indices.push(idx);
+            });
+            return Object.values(groups);
+        }
+
+        function renderWorkspaceSpeakerMapping() {
+            const root = document.getElementById('workspaceSpeakerMappingRoot');
+            if (!root) return;
+            const sm = _speakerMapState();
+            if (!sm.jobs || sm.jobs.length === 0) {
+                root.innerHTML = `<p class="text-[10px] text-slate-600 italic">Load a transcript job from Stage 2 to review diarization and assign speakers.</p>`;
+                _speakerMapStatus('idle', 'idle');
+                return;
+            }
+            const multiJob = sm.jobs.length > 1;
+            root.innerHTML = sm.jobs.map(view => {
+                const assigns = sm.assignments[view.job_id] || {};
+                const badge = view.is_prefill
+                    ? `<span class="px-2 py-0.5 text-[9px] font-bold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 tracking-wider">PREFILL</span>`
+                    : `<span class="px-2 py-0.5 text-[9px] font-bold rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 tracking-wider">SAVED</span>`;
+                const rows = (view.detected_speakers || []).map(d => {
+                    const a = assigns[d.speaker_index] || { role: "other", name: "", honorific: "" };
+                    return `
+                        <div class="py-2.5 border-b border-slate-800/60 last:border-0">
+                            <div class="flex items-center justify-between gap-2 mb-1.5">
+                                <div>
+                                    <div class="text-[11px] font-bold text-slate-200">${_speakerMapEsc(d.speaker_label)}</div>
+                                    <div class="text-[9px] font-mono text-slate-500">${d.word_count} words · ${d.utterance_count} turns</div>
+                                </div>
+                                <span class="text-[9px] font-mono text-slate-600">raw id ${d.speaker_index}</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400 italic leading-snug mb-2">"${_speakerMapEsc(d.sample) || "(no sample)"}"</p>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <select onchange="setWorkspaceSpeakerAssignment('${view.job_id}', ${d.speaker_index}, 'role', this.value)" class="bg-slate-900 border border-slate-700 rounded-lg text-[10px] text-slate-200 px-2 py-1.5 focus:border-indigo-500 focus:outline-none">
+                                    ${_speakerMapRoleOptions(view.roles, a.role)}
+                                </select>
+                                <select onchange="setWorkspaceSpeakerAssignment('${view.job_id}', ${d.speaker_index}, 'honorific', this.value)" class="bg-slate-900 border border-slate-700 rounded-lg text-[10px] text-slate-200 px-2 py-1.5 focus:border-indigo-500 focus:outline-none">
+                                    <option value="">No honorific</option>
+                                    <option value="MR"${a.honorific === "MR" ? " selected" : ""}>MR</option>
+                                    <option value="MS"${a.honorific === "MS" ? " selected" : ""}>MS</option>
+                                    <option value="MRS"${a.honorific === "MRS" ? " selected" : ""}>MRS</option>
+                                    <option value="DR"${a.honorific === "DR" ? " selected" : ""}>DR</option>
+                                </select>
+                                <input type="text" value="${_speakerMapEsc(a.name)}" placeholder="Name" oninput="setWorkspaceSpeakerAssignment('${view.job_id}', ${d.speaker_index}, 'name', this.value)" class="bg-slate-900 border border-slate-700 rounded-lg text-[10px] text-slate-200 px-2 py-1.5 flex-1 min-w-[10rem] focus:border-indigo-500 focus:outline-none placeholder:text-slate-600">
+                            </div>
+                        </div>
+                    `;
+                }).join("");
+                return `
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                        <div class="px-3 py-2 border-b border-slate-800 flex items-center justify-between gap-2">
+                            <div class="text-[11px] font-semibold text-slate-300 truncate">${multiJob ? '&#x1F4C1; ' : ''}${_speakerMapEsc(view.source_filename)}</div>
+                            ${badge}
+                        </div>
+                        <div class="px-3 py-1.5">${rows || '<p class="text-[10px] text-slate-500 italic py-2">No speakers detected.</p>'}</div>
+                    </div>
+                `;
+            }).join("");
+            _speakerMapStatus(`${sm.jobs.length} job(s) loaded`, 'ready');
+        }
+
+        async function loadWorkspaceSpeakerMapping() {
+            const root = document.getElementById('workspaceSpeakerMappingRoot');
+            if (!root) return;
+            const jobIds = (state.activeTranscriptJobIds || []).slice();
+            const sm = _speakerMapState();
+            sm.jobs = [];
+            sm.assignments = {};
+            if (jobIds.length === 0) {
+                renderWorkspaceSpeakerMapping();
+                return;
+            }
+            if (!window.api || typeof window.api.getSpeakerMapping !== "function") {
+                root.innerHTML = `<p class="text-[10px] text-red-400">Speaker mapping backend unavailable.</p>`;
+                _speakerMapStatus('unavailable', 'warning');
+                return;
+            }
+            _speakerMapStatus('loading…', 'loading');
+            try {
+                for (const jobId of jobIds) {
+                    const view = await window.api.getSpeakerMapping(jobId);
+                    sm.jobs.push(view);
+                    const assigns = {};
+                    (view.participants || []).forEach(p => {
+                        (p.speaker_indices || []).forEach(idx => {
+                            assigns[idx] = {
+                                role: p.role || "other",
+                                name: p.name || "",
+                                honorific: p.honorific || "",
+                            };
+                        });
+                    });
+                    (view.detected_speakers || []).forEach(d => {
+                        if (!assigns[d.speaker_index]) {
+                            assigns[d.speaker_index] = { role: "other", name: "", honorific: "" };
+                        }
+                    });
+                    sm.assignments[jobId] = assigns;
+                }
+                console.info('[DEPO-PRO] Speaker mapping reloaded', {
+                    jobIds: jobIds,
+                    count: sm.jobs.length,
+                });
+                renderWorkspaceSpeakerMapping();
+            } catch (err) {
+                console.error('Workspace speaker mapping load failed:', err);
+                root.innerHTML = `<p class="text-[10px] text-red-400">Could not load speaker mapping: ${_speakerMapEsc(err.message || err)}</p>`;
+                _speakerMapStatus('load failed', 'warning');
+            }
+        }
+
+        async function saveWorkspaceSpeakerMapping() {
+            const jobIds = (state.activeTranscriptJobIds || []).slice();
+            if (jobIds.length === 0) {
+                showToast("Load a transcript before saving speaker mapping.", "amber");
+                return;
+            }
+            const btn = document.getElementById('workspaceSpeakerMappingSaveBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = 'Saving…';
+            }
+            _speakerMapStatus('saving…', 'loading');
+            try {
+                for (const jobId of jobIds) {
+                    const participants = _buildWorkspaceParticipants(jobId);
+                    await window.api.saveSpeakerMapping(jobId, participants);
+                }
+                console.info('[DEPO-PRO] Stage 3 speaker mapping saved', {
+                    jobIds: jobIds,
+                });
+                addProvenanceRecord(
+                    "Speaker Mapping",
+                    `Saved authoritative speaker mapping for ${jobIds.length} transcript job(s).`,
+                    "user"
+                );
+                await loadTranscriptResultsIntoWorkspace(jobIds);
+                await loadWorkspaceSpeakerMapping();
+                showToast("Speaker mapping saved to Stage 3 workspace.", "emerald");
+            } catch (err) {
+                console.error('Workspace speaker mapping save failed:', err);
+                _speakerMapStatus('save failed', 'warning');
+                showToast(`Speaker mapping save failed: ${err.message}`, "red");
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = 'Save Speaker Mapping';
+                }
+            }
+        }
+
         // Sidebar rendering drivers
         // ============================================================
         // Workspace job context.
-        // The Workspace no longer hosts speaker assignment — that now
-        // lives solely on Step 2B (Speaker Mapping). This keeps just the
-        // active transcript job id so the AI Review Queue knows which
-        // job it is operating on.
+        // Stage 3 is now the one authoritative speaker-mapping screen.
+        // The workspace binds to the active transcript job and reloads
+        // both speaker mapping and AI review state from that authority.
         // ============================================================
 
         function _workspaceJob() {
-            // Lazily attach the workspace job context to global state.
             if (!state.workspaceJob) {
                 state.workspaceJob = { jobId: null };
             }
             return state.workspaceJob;
         }
 
-        // Bind the Workspace to a transcript job and load its AI review
-        // queue. Speaker assignment happens on Step 2B before this runs.
+        // Bind the Workspace to a transcript job and load its Stage 3
+        // speaker mapping plus AI review queue.
         async function loadWorkspaceJobContext(jobId) {
             const wj = _workspaceJob();
             wj.jobId = jobId;
+            if (typeof loadWorkspaceSpeakerMapping === "function") {
+                loadWorkspaceSpeakerMapping();
+            }
             // Wave 16: load the AI review queue for this job.
             if (typeof refreshAIReviewStatus === "function") refreshAIReviewStatus();
             if (typeof loadAISuggestions === "function" && jobId) {
@@ -521,6 +737,9 @@ window.toggleAudioPlayback = toggleAudioPlayback;
 window.changeAudioSpeed = changeAudioSpeed;
 window.skipAudio = skipAudio;
 window.renderCorrectionMemory = renderCorrectionMemory;
+window.loadWorkspaceSpeakerMapping = loadWorkspaceSpeakerMapping;
+window.saveWorkspaceSpeakerMapping = saveWorkspaceSpeakerMapping;
+window.setWorkspaceSpeakerAssignment = setWorkspaceSpeakerAssignment;
 
 // ============================================================
 // Wave 16 — AI review queue panel.

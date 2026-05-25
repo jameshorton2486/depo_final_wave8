@@ -35,6 +35,68 @@
             hydrateFromServer();
         };
 
+        function defaultStage1State() {
+            return {
+                rawIntakeNotes: '',
+                keytermEntries: [],
+                parserMetadata: {
+                    appearances: [],
+                    speaker_hints: [],
+                    deepgram_config: {},
+                    jurisdiction_type: 'texas_state',
+                    location_type: 'unknown',
+                    detected_types: [],
+                    warnings: [],
+                    field_sources: {},
+                },
+                workspace: {
+                    sessions: {},
+                },
+            };
+        }
+
+        function resetVolatileCaseState() {
+            state.sessionId = null;
+            state.reporterId = null;
+            state.stage1 = defaultStage1State();
+            state.correctionsMemory = [];
+            state.provenance = [];
+            state.activeTranscriptJobIds = [];
+            state.workspaceJob = { jobId: null };
+            state.workspaceSpeakerMapping = { jobs: [], assignments: {} };
+            state.transcriptLines = [];
+            state.focusedLineId = null;
+            const rawNotesField = document.getElementById('rawIntakeNotes');
+            if (rawNotesField) rawNotesField.value = '';
+            console.info('[DEPO-PRO] Cleared volatile case state');
+        }
+
+        async function hydrateStage1Artifacts(caseId) {
+            if (!window.api || !caseId) return;
+            try {
+                const artifacts = await window.api.getStage1Artifacts(caseId);
+                state.stage1 = {
+                    ...defaultStage1State(),
+                    rawIntakeNotes: artifacts.raw_intake_notes || '',
+                    keytermEntries: artifacts.keyterms || [],
+                    parserMetadata: {
+                        ...defaultStage1State().parserMetadata,
+                        ...(artifacts.parser_metadata || {}),
+                    },
+                    workspace: artifacts.workspace || { sessions: {} },
+                };
+                const rawNotesField = document.getElementById('rawIntakeNotes');
+                if (rawNotesField) rawNotesField.value = state.stage1.rawIntakeNotes || '';
+                console.info('[DEPO-PRO] Hydrated Stage 1 artifacts', {
+                    caseId: caseId,
+                    keytermCount: (state.stage1.keytermEntries || []).length,
+                });
+            } catch (err) {
+                console.warn('[DEPO-PRO] Stage 1 artifact hydration failed', err);
+                state.stage1 = defaultStage1State();
+            }
+        }
+
         // On startup, ask the backend for the most recent case. If there is one,
         // load it (and its session + reporter, if present) into state.caseInfo.
         // Silent no-op when the backend is unreachable or no cases exist yet.
@@ -61,12 +123,12 @@
         async function loadCaseById(caseId, silent) {
             if (!window.api) return;
             try {
+                resetVolatileCaseState();
                 const caseRow = await window.api.getCase(caseId);
                 state.caseId = caseRow.case_id;
                 Object.assign(state.caseInfo, window.api.caseRowToCaseInfo(caseRow));
 
                 // Sessions
-                state.sessionId = null;
                 const sessList = await window.api.listSessionsForCase(caseId);
                 if (sessList && sessList.count > 0) {
                     const sess = sessList.sessions[0];
@@ -74,7 +136,6 @@
                     Object.assign(state.caseInfo, window.api.sessionRowToCaseInfoPatch(sess));
 
                     // Reporter (if linked)
-                    state.reporterId = null;
                     if (sess.reporter_id) {
                         try {
                             const rep = await window.api.getReporter(sess.reporter_id);
@@ -89,9 +150,11 @@
                     Object.assign(state.caseInfo, {
                         deponent: '', date: '', startTime: '', endTime: '',
                         address: '', custodialName: '', requestingParty: '',
+                        csrName: '', csrLicense: '', firmReg: '', csrCertExp: '',
                     });
-                    state.reporterId = null;
                 }
+
+                await hydrateStage1Artifacts(caseId);
 
                 if (typeof hydrateUFMFormFromState === 'function') hydrateUFMFormFromState();
                 if (typeof renderUFMTermsTable === 'function') renderUFMTermsTable();
@@ -110,8 +173,7 @@
         // Discard current state and start a blank case (no server call until save).
         function newCase() {
             state.caseId = null;
-            state.sessionId = null;
-            state.reporterId = null;
+            resetVolatileCaseState();
             Object.assign(state.caseInfo, {
                 cause: '', caption: '', court: '', county: '', state: '',
                 deponent: '', date: '', startTime: '', endTime: '',
@@ -119,10 +181,6 @@
                 custodialName: '', requestingParty: '',
                 signature: '', certified: false,
             });
-            // Clear the raw intake notes textarea too -- it is not part
-            // of caseInfo, so hydrateUFMFormFromState() does not reach it.
-            const rawNotesField = document.getElementById('rawIntakeNotes');
-            if (rawNotesField) rawNotesField.value = '';
             if (typeof hydrateUFMFormFromState === 'function') hydrateUFMFormFromState();
             if (typeof renderUFMTermsTable === 'function') renderUFMTermsTable();
             refreshCasePickerLabel();
@@ -283,12 +341,6 @@
             // ----- 3. Session (Block 2 + Block 4) -----
             if (window.api.canSaveSession(state.caseInfo)) {
                 try {
-                    // Stitch in the reporter we just saved
-                    const caseInfoWithReporter = { ...state.caseInfo };
-                    if (state.reporterId) {
-                        // Sessions payload already pulls everything from caseInfo, so we
-                        // pass reporter_id directly via a small extension here.
-                    }
                     if (state.sessionId) {
                         const body = window.api.caseInfoToSessionPayload(state.caseInfo, state.caseId);
                         body.reporter_id = state.reporterId;
@@ -315,6 +367,20 @@
                 } catch (err) {
                     summary.errors.push(`session: ${err.message}`);
                     console.error("Session save failed:", err);
+                }
+            }
+
+            // ----- 4. Authoritative Stage 1 artifacts ----- 
+            if (state.caseId) {
+                try {
+                    state.stage1.rawIntakeNotes = (document.getElementById('rawIntakeNotes') || {}).value || '';
+                    const syncResult = await window.api.syncStage1Artifacts(state);
+                    state.stage1.keytermEntries = (syncResult && syncResult.keyterms) || state.stage1.keytermEntries;
+                    state.stage1.parserMetadata = (syncResult && syncResult.parser_metadata) || state.stage1.parserMetadata;
+                    state.stage1.workspace = (syncResult && syncResult.workspace) || state.stage1.workspace;
+                } catch (err) {
+                    summary.errors.push(`stage1: ${err.message}`);
+                    console.error("Stage 1 artifact sync failed:", err);
                 }
             }
 
@@ -359,6 +425,7 @@
                     renderCorrectionMemory && renderCorrectionMemory();
                     renderProvenanceTimeline && renderProvenanceTimeline();
                     updateStatsBar && updateStatsBar();
+                    loadWorkspaceSpeakerMapping && loadWorkspaceSpeakerMapping();
                 } else if (stageNum === 4) {
                     renderExhibitsIndex && renderExhibitsIndex();
                 } else if (stageNum === 5) {
@@ -387,3 +454,4 @@ window.newCase = newCase;
 window.refreshCasePicker = refreshCasePicker;
 window.refreshCasePickerLabel = refreshCasePickerLabel;
 window.toggleCasePicker = toggleCasePicker;
+window.resetVolatileCaseState = resetVolatileCaseState;

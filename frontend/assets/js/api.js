@@ -121,6 +121,35 @@
         };
     }
 
+    function buildStage1SyncPayload(stateObj) {
+        const caseInfo = stateObj.caseInfo || {};
+        const stage1 = stateObj.stage1 || {};
+        return {
+            case_id: stateObj.caseId,
+            session_id: stateObj.sessionId,
+            reporter_name: (caseInfo.csrName || '').trim() || null,
+            ufmCause: caseInfo.cause || null,
+            ufmStyle: caseInfo.caption || null,
+            ufmCourt: caseInfo.court || null,
+            ufmCounty: caseInfo.county || null,
+            ufmState: caseInfo.state || 'Texas',
+            jurisdiction_type: (stage1.parserMetadata && stage1.parserMetadata.jurisdiction_type) || 'texas_state',
+            ufmWitness: caseInfo.deponent || null,
+            ufmDate: caseInfo.date || null,
+            ufmStartTime: caseInfo.startTime || null,
+            ufmEndTime: caseInfo.endTime || null,
+            ufmAddress: caseInfo.address || null,
+            location_type: (stage1.parserMetadata && stage1.parserMetadata.location_type) || 'unknown',
+            ufmCSRName: caseInfo.csrName || null,
+            ufmCSRLicense: caseInfo.csrLicense || null,
+            ufmFirmReg: caseInfo.firmReg || null,
+            ufmCSRCertExp: caseInfo.csrCertExp || null,
+            raw_intake_notes: stage1.rawIntakeNotes || '',
+            parser_metadata: stage1.parserMetadata || {},
+            keyterms: stage1.keytermEntries || [],
+        };
+    }
+
     // ====================================================================
     // Generic HTTP helper
     // ====================================================================
@@ -238,6 +267,7 @@
         reporterRowToCaseInfoPatch,
         canSaveSession,
         canSaveReporter,
+        buildStage1SyncPayload,
 
         // Cases
         listCases() {
@@ -287,6 +317,14 @@
             return _fetch('PUT', `/reporters/${encodeURIComponent(reporterId)}`, caseInfoToReporterPayload(caseInfo));
         },
 
+        // Stage 1 authoritative artifact sync
+        syncStage1Artifacts(stateObj) {
+            return _fetch('POST', '/intake/workspace', buildStage1SyncPayload(stateObj));
+        },
+        getStage1Artifacts(caseId) {
+            return _fetch('GET', `/intake/cases/${encodeURIComponent(caseId)}`);
+        },
+
         // Transcripts (Stage 2)
         uploadTranscriptFile,
         listTranscriptJobs(caseId) {
@@ -299,6 +337,8 @@
         getTranscriptContent(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/content`);
         },
+        // Stage 3 Workspace is the authoritative speaker-mapping UI.
+        // These APIs remain under /transcripts for compatibility.
         getSpeakerMapping(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/speaker-mapping`);
         },

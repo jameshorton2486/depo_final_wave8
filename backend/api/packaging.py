@@ -33,6 +33,7 @@ from backend.packaging.package_repo import (
 )
 from backend.transcript import repository as trepo
 from backend.transcript_state import snapshot_repo
+from backend.services import intake_store
 
 router = APIRouter(prefix="/api/packages", tags=["packages"])
 
@@ -108,6 +109,8 @@ def _build_metadata_for_job(job_id: str, override: dict) -> dict:
 
     session_id = job.get("session_id")
     case_id = job.get("case_id")
+    intake = intake_store.read_stage1_record(case_id) if case_id else {}
+    parser_meta = intake.get("parser_metadata") or {}
 
     # --- Case -----------------------------------------------------------
     if case_id:
@@ -132,9 +135,13 @@ def _build_metadata_for_job(job_id: str, override: dict) -> dict:
 
             # Plaintiff / defendant names from parties
             _populate_party_names(meta, case_id)
+            if not meta.get("plaintiff_names") and not meta.get("defendant_names"):
+                _populate_parties_from_caption(meta)
 
             # Appearances and counsel of record from case_attorneys
             _populate_appearances(meta, case_id)
+            if not meta.get("appearances"):
+                _populate_appearances_from_intake(meta, parser_meta)
 
     # --- Session --------------------------------------------------------
     if session_id:
@@ -143,6 +150,7 @@ def _build_metadata_for_job(job_id: str, override: dict) -> dict:
             meta["witness_name"] = session.get("witness_name") or ""
             meta["party_at_instance"] = session.get("requesting_party_name") or ""
             meta["custodial_attorney"] = session.get("custodial_attorney_name") or ""
+            meta["location"] = session.get("location_address") or ""
 
             dt_start = _parse_iso_dt(session.get("scheduled_at") or "")
             if dt_start:
@@ -183,6 +191,17 @@ def _build_metadata_for_job(job_id: str, override: dict) -> dict:
                             meta["firm_address"] = addr
                         if csz:
                             meta["firm_city_state_zip"] = csz
+
+    if not meta.get("deposition_method"):
+        loc_type = parser_meta.get("location_type") or ""
+        method_map = {
+            "zoom": "Zoom videoconference",
+            "in_person": "stenographic",
+            "hybrid": "hybrid Zoom/in-person",
+            "phone": "telephone",
+        }
+        if loc_type in method_map:
+            meta["deposition_method"] = method_map[loc_type]
 
     # --- Job-specific deposition metadata --------------------------------
     depo = get_depo_meta(job_id)
@@ -233,6 +252,24 @@ def _populate_party_names(meta: dict, case_id: str) -> None:
         meta["defendant_names"] = ", ".join(defendants)
 
 
+def _populate_parties_from_caption(meta: dict) -> None:
+    caption = (meta.get("caption") or "").strip()
+    if not caption:
+        return
+    parts = None
+    for needle in (" vs. ", " VS. ", " v. ", " V. ", " vs ", " v "):
+        if needle in caption:
+            parts = caption.split(needle, 1)
+            break
+    if not parts or len(parts) != 2:
+        return
+    plaintiff, defendant = parts[0].strip(), parts[1].strip()
+    if plaintiff and not meta.get("plaintiff_names"):
+        meta["plaintiff_names"] = plaintiff
+    if defendant and not meta.get("defendant_names"):
+        meta["defendant_names"] = defendant
+
+
 def _populate_appearances(meta: dict, case_id: str) -> None:
     from backend.db.repository import get_connection
     with get_connection() as conn:
@@ -274,6 +311,32 @@ def _populate_appearances(meta: dict, case_id: str) -> None:
     if appearances:
         meta["appearances"] = appearances
     if counsel:
+        meta["counsel_of_record"] = counsel
+
+
+def _populate_appearances_from_intake(meta: dict, parser_meta: dict) -> None:
+    appearances = []
+    counsel = []
+    for ap in parser_meta.get("appearances") or []:
+        side = str(ap.get("side") or "").lower()
+        party = "Plaintiff" if side == "plaintiff" else "Defendant" if side == "defendant" else ""
+        appearances.append({
+            "attorney": ap.get("name") or "",
+            "sbot_no": ap.get("bar_number") or "",
+            "firm": ap.get("firm") or "",
+            "address": "",
+            "city_state_zip": "",
+            "phone": "",
+            "party": party,
+            "role": side,
+        })
+        counsel.append({
+            "name": ap.get("name") or "",
+            "role": f"Attorney for {party}" if party else "Attorney",
+        })
+    if appearances and not meta.get("appearances"):
+        meta["appearances"] = appearances
+    if counsel and not meta.get("counsel_of_record"):
         meta["counsel_of_record"] = counsel
 
 
