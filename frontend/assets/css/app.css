@@ -1,3 +1,11 @@
+        /* Reserve the scrollbar gutter on every stage screen so the layout
+           does not shift when content length differs between routes.
+           Applies to .stage-panel roots that use overflow-y:auto (stages 1,
+           2, 4, 5, 6); no-op on overflow:hidden roots (stage 3). */
+        .stage-panel {
+            scrollbar-gutter: stable;
+        }
+
         /* Custom scrollbar styling */
         ::-webkit-scrollbar {
             width: 6px;
