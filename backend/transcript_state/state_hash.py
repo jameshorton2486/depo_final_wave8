@@ -27,6 +27,7 @@ import json
 # from the state simply contributes its empty default -- the hash is
 # still deterministic.
 HASH_INPUT_KEYS: tuple[str, ...] = (
+    "working_utterances",
     "render_lines",
     "speaker_mapping",
     "accepted_ai_suggestions",

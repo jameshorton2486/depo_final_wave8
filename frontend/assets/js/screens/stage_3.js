@@ -6,6 +6,9 @@
                 showToast("Please enter a valid Find RegEx.", "red");
                 return;
             }
+            if (!window.confirm("Apply this regex replacement to the authoritative working transcript? Raw transcript text and audio will remain unchanged.")) {
+                return;
+            }
 
             showToast("Running Python Pipeline Preprocessing...", "indigo");
 
@@ -14,15 +17,24 @@
                 let matchesCount = 0;
 
                 state.transcriptLines.forEach(line => {
-                    if (line.text.match(regex)) {
+                    if (line.jobId && line.text.match(regex)) {
                         line.text = line.text.replace(regex, replaceVal);
                         matchesCount++;
                     }
                 });
 
                 if (matchesCount > 0) {
-                    addProvenanceRecord("Python RegEx Pipeline", `Executed find/replace [${findVal}] -> [${replaceVal}]. ${matchesCount} substitutions completed.`, "system");
+                    addProvenanceRecord("Python RegEx Pipeline", `Executed find/replace [${findVal}] -> [${replaceVal}]. ${matchesCount} substitutions completed.`, "system", {
+                        eventType: 'regex_pipeline',
+                        source: 'workspace',
+                        metadata: {
+                            find_pattern: findVal,
+                            replace_with: replaceVal,
+                            substitutions: matchesCount,
+                        },
+                    });
                     compileAndRenderTranscript();
+                    queueWorkspaceTranscriptSave('regex_pipeline');
                     showToast(`Pipeline execution successful: ${matchesCount} modifications applied.`, "emerald");
                 } else {
                     showToast("No pattern occurrences located in transcription arrays.", "amber");
@@ -37,6 +49,139 @@
             showToast("Aligning LLM confidence scores...", "cyan");
             addProvenanceRecord("AI Model Suggestions", "Parsed low confidence speech boundaries.", "ai");
             compileAndRenderTranscript();
+        }
+
+        function _workspaceSaveState() {
+            if (!state.workspaceSave) {
+                state.workspaceSave = {
+                    dirty: false,
+                    pending: false,
+                    saving: false,
+                    lastSavedAt: null,
+                    lastError: null,
+                    timer: null,
+                };
+            }
+            return state.workspaceSave;
+        }
+
+        function renderWorkspaceSaveStatus() {
+            const el = document.getElementById('workspaceSaveStatus');
+            const dot = document.getElementById('workspaceSaveStatusDot');
+            const hint = document.getElementById('workspaceSaveHint');
+            const btn = document.getElementById('workspaceSaveBtn');
+            if (!el || !dot || !hint) return;
+
+            const saveState = _workspaceSaveState();
+            const jobIds = (state.activeTranscriptJobIds || []).slice();
+            if (jobIds.length === 0) {
+                el.innerText = "No transcript loaded";
+                dot.className = "w-2 h-2 rounded-full bg-slate-500";
+                hint.innerText = "Stage 3 working transcript authority";
+                if (btn) btn.disabled = true;
+                return;
+            }
+            if (btn) btn.disabled = false;
+            if (saveState.lastError) {
+                el.innerText = "Save Failed";
+                dot.className = "w-2 h-2 rounded-full bg-red-500";
+                hint.innerText = saveState.lastError;
+                return;
+            }
+            if (saveState.saving) {
+                el.innerText = "Saving…";
+                dot.className = "w-2 h-2 rounded-full bg-indigo-400 animate-pulse";
+                hint.innerText = "Writing authoritative working transcript to backend";
+                return;
+            }
+            if (saveState.dirty || saveState.pending) {
+                el.innerText = "Unsaved Changes";
+                dot.className = "w-2 h-2 rounded-full bg-amber-400";
+                hint.innerText = "Save before switching transcripts, cases, or closing the workspace";
+                return;
+            }
+            if (saveState.lastSavedAt) {
+                const when = new Date(saveState.lastSavedAt).toLocaleTimeString([], {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                });
+                el.innerText = `Saved ${when}`;
+                dot.className = "w-2 h-2 rounded-full bg-emerald-500";
+                hint.innerText = "Backend working transcript is current";
+                return;
+            }
+            el.innerText = "Saved";
+            dot.className = "w-2 h-2 rounded-full bg-emerald-500";
+            hint.innerText = "No pending changes";
+        }
+
+        function _authoritativeTranscriptLinesForJob(jobId) {
+            return (state.transcriptLines || [])
+                .filter(line => line && line.jobId === jobId && !String(line.id || '').startsWith('manual-line-'))
+                .map(line => ({
+                    utterance_id: line.id,
+                    working_text: line.text || '',
+                }));
+        }
+
+        async function persistWorkspaceTranscript(reason) {
+            const saveState = _workspaceSaveState();
+            const jobIds = (state.activeTranscriptJobIds || []).slice();
+            if (!window.api || typeof window.api.saveWorkingTranscript !== "function" || jobIds.length === 0) {
+                return;
+            }
+            saveState.pending = false;
+            saveState.saving = true;
+            saveState.lastError = null;
+            renderWorkspaceSaveStatus();
+            try {
+                for (const jobId of jobIds) {
+                    const utterances = _authoritativeTranscriptLinesForJob(jobId);
+                    await window.api.saveWorkingTranscript(jobId, utterances, reason || 'stage3_workspace');
+                }
+                saveState.lastSavedAt = new Date().toISOString();
+                saveState.dirty = false;
+                console.info('[DEPO-PRO] Stage 3 working transcript saved', {
+                    reason: reason,
+                    jobIds: jobIds,
+                    savedAt: saveState.lastSavedAt,
+                });
+                if (reason === 'manual_save') {
+                    showToast("Working transcript saved.", "emerald");
+                }
+            } catch (err) {
+                saveState.lastError = err.message || String(err);
+                saveState.dirty = true;
+                console.error('[DEPO-PRO] Stage 3 working transcript save failed', err);
+                showToast(`Transcript save failed: ${saveState.lastError}`, "red");
+            } finally {
+                saveState.saving = false;
+                renderWorkspaceSaveStatus();
+            }
+        }
+
+        function queueWorkspaceTranscriptSave(reason) {
+            const saveState = _workspaceSaveState();
+            saveState.dirty = true;
+            saveState.pending = true;
+            saveState.lastError = null;
+            if (saveState.timer) {
+                clearTimeout(saveState.timer);
+            }
+            renderWorkspaceSaveStatus();
+            saveState.timer = setTimeout(() => {
+                saveState.timer = null;
+                persistWorkspaceTranscript(reason);
+            }, 300);
+        }
+
+        async function manualSaveWorkspaceTranscript() {
+            const saveState = _workspaceSaveState();
+            if (saveState.timer) {
+                clearTimeout(saveState.timer);
+                saveState.timer = null;
+            }
+            await persistWorkspaceTranscript('manual_save');
         }
 
         function updateTemperatureSlider(val) {
@@ -89,6 +234,7 @@
             let currentPageNumber = 1;
 
             state.transcriptLines.forEach((line) => {
+                if (!line) return;
                 // If Texas strict limits are locked, wrap at 25 lines
                 if (state.caseInfo.strictLineLock && currentLineNumberOnPage > 25) {
                     const divider = document.createElement('div');
@@ -101,7 +247,11 @@
                 }
 
                 const row = document.createElement('div');
-                row.className = `group flex items-start gap-4 hover:bg-slate-900/20 p-1.5 rounded transition-all cursor-pointer relative ${state.focusedLineId === line.id ? 'bg-indigo-950/20 border-l-2 border-indigo-500' : ''}`;
+                const isSystemRow = !line.jobId;
+                const isOverride = !!line.isWorkingOverride;
+                const mutationSource = line.workingSource || '';
+                const isPlaybackLine = state.activePlayback && state.focusedLineId === line.id;
+                row.className = `group flex items-start gap-4 hover:bg-slate-900/20 p-1.5 rounded transition-all cursor-pointer relative ${state.focusedLineId === line.id ? 'bg-indigo-950/20 border-l-2 border-indigo-500' : ''} ${isOverride ? 'ring-1 ring-emerald-500/20' : ''} ${isPlaybackLine ? 'shadow-[0_0_0_1px_rgba(34,197,94,0.3)]' : ''}`;
                 row.id = line.id;
                 row.setAttribute('onclick', `focusLineRow('${line.id}')`);
 
@@ -121,15 +271,16 @@
                 textBlock.className = `flex-1 font-mono text-xs md:text-sm select-text ${state.canvasTheme === 'word' ? 'text-slate-800' : 'text-slate-300'}`;
 
                 let prefixHtml = "";
-                if (line.type === "Q") {
+                if (!isSystemRow && line.type === "Q") {
                     prefixHtml = `<span class="text-indigo-600 font-bold mr-2 select-none">Q.</span>`;
-                } else if (line.type === "A") {
+                } else if (!isSystemRow && line.type === "A") {
                     prefixHtml = `<span class="text-cyan-600 font-bold mr-2 select-none">A.</span>`;
                 }
 
                 // Highlight low confidence boundaries
                 let textContentHtml = "";
-                const words = line.text.split(" ");
+                const normalizedText = (line.text || '').trim();
+                const words = normalizedText ? normalizedText.split(/\s+/) : [];
 
                 words.forEach((word) => {
                     let cleanWord = word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
@@ -143,12 +294,29 @@
                     }
                 });
 
+                if (!textContentHtml) {
+                    textContentHtml = `<span class="italic ${state.canvasTheme === 'word' ? 'text-slate-400' : 'text-slate-600'}">[blank working line]</span>`;
+                }
+
+                const sourceBadge = isOverride
+                    ? mutationSource === 'ai_apply'
+                        ? `<span class="text-[8px] px-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">AI APPLIED</span>`
+                        : mutationSource === 'snapshot_rollback'
+                            ? `<span class="text-[8px] px-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">SNAPSHOT RESTORED</span>`
+                            : `<span class="text-[8px] px-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">WORKING OVERRIDE</span>`
+                    : '';
+                const speakerLabel = isSystemRow
+                    ? 'WORKSPACE SYSTEM'
+                    : (line.speaker || (line.speakerIndex != null ? `Speaker ${line.speakerIndex}` : 'Unassigned Speaker'));
+
                 textBlock.innerHTML = `
                     <div class="flex items-center gap-2 mb-1 select-none">
-                        <span class="text-[9px] font-bold text-slate-500 tracking-wider">${line.speaker}</span>
+                        <span class="text-[9px] font-bold text-slate-500 tracking-wider">${speakerLabel}</span>
+                        ${sourceBadge}
                         ${line.exhibit ? `<span class="text-[8px] px-1 bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 rounded">EXHIBIT ${line.exhibit} MARKED</span>` : ''}
+                        ${line.startTime != null && !isSystemRow ? `<span class="text-[8px] text-slate-600 font-mono">@ ${Number(line.startTime || 0).toFixed(1)}s</span>` : ''}
                     </div>
-                    <div class="transcript-line outline-none focus:bg-indigo-500/5 focus:rounded p-0.5" contenteditable="${state.caseInfo.certified ? 'false' : 'true'}" onblur="handleTextEdit('${line.id}', this.innerHTML)">
+                    <div class="transcript-line outline-none focus:bg-indigo-500/5 focus:rounded p-0.5 whitespace-pre-wrap ${isSystemRow ? 'italic text-slate-500' : ''}" contenteditable="${(!state.caseInfo.certified && !isSystemRow) ? 'true' : 'false'}" spellcheck="false" onblur="handleTextEdit('${line.id}', this.innerHTML)">
                         ${prefixHtml}${textContentHtml}
                     </div>
                 `;
@@ -206,16 +374,40 @@
 
         // Direct Text Editor State handler
         function handleTextEdit(id, newHtml) {
-            let cleanText = newHtml.replace(/<span[^>]*>.*?<\/span>/g, '').trim();
-            cleanText = cleanText.replace(/&nbsp;/g, ' ');
-
             const line = state.transcriptLines.find(l => l.id === id);
+            if (!line || !line.jobId) {
+                return;
+            }
+            let cleanText = String(newHtml || '')
+                .replace(/<div>/gi, '\n')
+                .replace(/<\/div>/gi, '')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<span[^>]*>/gi, '')
+                .replace(/<\/span>/gi, '')
+                .replace(/&nbsp;/g, ' ')
+                .replace(/\s*\n\s*/g, ' ')
+                .trim();
+            if (cleanText === '[blank working line]') {
+                cleanText = '';
+            }
+
             if (line && line.text !== cleanText) {
                 const oldText = line.text;
                 line.text = cleanText;
+                line.isWorkingOverride = true;
+                line.workingSource = 'manual_edit';
 
-                addProvenanceRecord("Human Line Correction", `Row ${line.index} text correction: "${oldText}" -> "${cleanText}"`, "user");
+                addProvenanceRecord("Human Line Correction", `Row ${line.index} text correction: "${oldText}" -> "${cleanText}"`, "user", {
+                    eventType: 'manual_edit',
+                    metadata: {
+                        line_index: line.index,
+                        utterance_id: line.id,
+                        old_text: oldText,
+                        new_text: cleanText,
+                    },
+                });
                 compileAndRenderTranscript();
+                queueWorkspaceTranscriptSave('manual_edit');
                 showToast(`Line ${line.index} updated.`);
             }
         }
@@ -236,10 +428,20 @@
 
         function drawAudioWaveProgress(index) {
             const playhead = document.getElementById('playheadIndicator');
-            const percent = Math.min((index / state.transcriptLines.length) * 100, 100);
+            const playableLines = (state.transcriptLines || []).filter(line => line && line.jobId);
+            const focused = state.transcriptLines.find(l => l && l.index === index);
+            const playableIndex = Math.max(
+                0,
+                playableLines.findIndex(line => focused && line.id === focused.id)
+            );
+            const percent = playableLines.length > 0
+                ? Math.min(((playableIndex + 1) / playableLines.length) * 100, 100)
+                : 0;
             playhead.style.left = `${percent}%`;
 
-            const totalDuration = state.transcriptLines.slice(0, index).reduce((acc, c) => acc + c.duration, 0);
+            const totalDuration = playableLines
+                .slice(0, playableIndex + 1)
+                .reduce((acc, c) => acc + (c.duration || 0), 0);
             document.getElementById('audioTimeLabel').innerText = `00:${totalDuration.toFixed(0).padStart(2, '0')}.2 / 02:45.0`;
         }
 
@@ -332,8 +534,18 @@
             if (line && line.hasSuggestion) {
                 line.text = line.text.replace(new RegExp(line.suggestion.original, 'gi'), line.suggestion.replacement);
                 line.hasSuggestion = false;
-                addProvenanceRecord("AI Match Accepted", `Substituted speech block segment with [${line.suggestion.replacement}]`, "ai");
+                line.isWorkingOverride = true;
+                line.workingSource = 'suggestion_accept';
+                addProvenanceRecord("AI Match Accepted", `Substituted speech block segment with [${line.suggestion.replacement}]`, "ai", {
+                    eventType: 'ai_local_accept',
+                    metadata: {
+                        utterance_id: line.id,
+                        original: line.suggestion.original,
+                        replacement: line.suggestion.replacement,
+                    },
+                });
                 compileAndRenderTranscript();
+                queueWorkspaceTranscriptSave('local_suggestion_accept');
                 showToast("AI suggestion merged into living transcript arrays.", "emerald");
                 triggerSuggestionBox(lineId);
             }
@@ -343,7 +555,13 @@
             const line = state.transcriptLines.find(l => l.id === lineId);
             if (line && line.hasSuggestion) {
                 line.hasSuggestion = false;
-                addProvenanceRecord("AI Match Rejected", `Dismissed AI suggestions on line index ${line.index}`, "user");
+                addProvenanceRecord("AI Match Rejected", `Dismissed AI suggestions on line index ${line.index}`, "user", {
+                    eventType: 'ai_local_reject',
+                    metadata: {
+                        utterance_id: line.id,
+                        line_index: line.index,
+                    },
+                });
                 compileAndRenderTranscript();
                 showToast("Suggestion dismissed.");
                 triggerSuggestionBox(lineId);
@@ -361,10 +579,20 @@
 
                 line.text = line.text.replace(new RegExp(line.suggestion.original, 'gi'), line.suggestion.replacement);
                 line.hasSuggestion = false;
+                line.isWorkingOverride = true;
+                line.workingSource = 'suggestion_accept';
 
-                addProvenanceRecord("Correction Memory Commit", `Learned globally: "${line.suggestion.original}" matches "${line.suggestion.replacement}"`, "user");
+                addProvenanceRecord("Correction Memory Commit", `Learned globally: "${line.suggestion.original}" matches "${line.suggestion.replacement}"`, "user", {
+                    eventType: 'correction_memory_commit',
+                    metadata: {
+                        utterance_id: line.id,
+                        original: line.suggestion.original,
+                        replacement: line.suggestion.replacement,
+                    },
+                });
                 compileAndRenderTranscript();
                 renderCorrectionMemory();
+                queueWorkspaceTranscriptSave('local_suggestion_accept_and_remember');
                 showToast("Correction captured and saved to reporter memory dictionary!", "emerald");
                 triggerSuggestionBox(lineId);
             }
@@ -372,37 +600,42 @@
 
         // Visual format prefixes (Q & A)
         function applyLinePrefix(type) {
-            const line = state.transcriptLines.find(l => l.id === state.focusedLineId);
-            if (line) {
-                line.type = type;
-                addProvenanceRecord("UFM Formatting Shift", `Enforced prefix rules type ${type} on row ${line.index}`, "user");
-                compileAndRenderTranscript();
-                showToast(`Prefix set to ${type === 'Q' ? 'Question' : 'Answer'}.`);
-            }
+            showToast(
+                "Manual Q/A forcing is not authoritative. Use Stage 3 speaker mapping to change exportable Q/A ownership.",
+                "amber"
+            );
         }
 
         // Insert new structural elements
         function forceManualPageBreak() {
-            state.transcriptLines.push({
-                id: `manual-line-${Date.now()}`,
-                index: state.transcriptLines.length + 1,
-                speaker: "SYSTEM",
-                text: "--- MANUALLY FORCED PAGINATION BARRIER ---",
-                type: "text",
-                confidence: 1.0,
-                hasSuggestion: false,
-                duration: 0.0
-            });
-            compileAndRenderTranscript();
-            showToast("Forced layout page break boundary applied.");
+            if (!window.confirm("Add a preview-only page break marker? This does not modify the authoritative working transcript or export state.")) {
+                return;
+            }
+            showToast(
+                "Manual page breaks are preview-only and do not affect authoritative export or certification pagination.",
+                "amber"
+            );
         }
 
         function removeFillerWordsGlobal() {
+            if (!window.confirm("Strip acoustic fillers from the authoritative working transcript? Raw transcript text and audio will remain unchanged.")) {
+                return;
+            }
             state.transcriptLines.forEach(line => {
-                line.text = line.text.replace(/\b(um|uh)\b/gi, '').replace(/\s+/g, ' ').trim();
+                if (line.jobId) {
+                    line.text = line.text.replace(/\b(um|uh)\b/gi, '').replace(/\s+/g, ' ').trim();
+                    line.isWorkingOverride = true;
+                    line.workingSource = 'filler_strip';
+                }
             });
-            addProvenanceRecord("Acoustic Prep Pipeline", "Removed linguistic fillers (um/uh) globally.", "system");
+            addProvenanceRecord("Acoustic Prep Pipeline", "Removed linguistic fillers (um/uh) globally.", "system", {
+                eventType: 'filler_strip',
+                metadata: {
+                    scope: 'workspace',
+                },
+            });
             compileAndRenderTranscript();
+            queueWorkspaceTranscriptSave('remove_fillers');
             showToast("Linguistic fillers removed globally.", "emerald");
         }
 
@@ -411,18 +644,24 @@
             state.activePlayback = !state.activePlayback;
             const playBtn = document.getElementById('playAudioBtn');
             const svg = document.getElementById('playIconSvg');
+            const playableLines = (state.transcriptLines || []).filter(line => line && line.jobId);
 
             if (state.activePlayback) {
+                if (playableLines.length === 0) {
+                    state.activePlayback = false;
+                    showToast("No timestamped transcript lines available for playback review.", "amber");
+                    return;
+                }
                 svg.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 9v6m4-6v6"/>`;
                 playBtn.className = "bg-amber-500 hover:bg-amber-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center";
-                showToast("Audio timeline active. Seeking utterance timestamps.");
+                showToast("Audio review playback active. Timing is estimated from transcript timestamps.", "indigo");
 
                 state.playbackInterval = setInterval(() => {
                     state.playbackLineIdx++;
-                    if (state.playbackLineIdx >= state.transcriptLines.length) {
+                    if (state.playbackLineIdx >= playableLines.length) {
                         state.playbackLineIdx = 0;
                     }
-                    focusLineRow(state.transcriptLines[state.playbackLineIdx].id);
+                    focusLineRow(playableLines[state.playbackLineIdx].id);
                 }, 1000 / state.playbackSpeed);
             } else {
                 svg.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`;
@@ -435,19 +674,22 @@
             state.playbackSpeed = parseFloat(val);
             document.getElementById('audioSpeedLabel').innerText = `${state.playbackSpeed.toFixed(1)}x`;
             if (state.activePlayback) {
+                const playableLines = (state.transcriptLines || []).filter(line => line && line.jobId);
                 clearInterval(state.playbackInterval);
                 state.playbackInterval = setInterval(() => {
                     state.playbackLineIdx++;
-                    if (state.playbackLineIdx >= state.transcriptLines.length) state.playbackLineIdx = 0;
-                    focusLineRow(state.transcriptLines[state.playbackLineIdx].id);
+                    if (state.playbackLineIdx >= playableLines.length) state.playbackLineIdx = 0;
+                    focusLineRow(playableLines[state.playbackLineIdx].id);
                 }, 1000 / state.playbackSpeed);
             }
         }
 
         function skipAudio(val) {
+            const playableLines = (state.transcriptLines || []).filter(line => line && line.jobId);
+            if (playableLines.length === 0) return;
             const change = val > 0 ? 1 : -1;
-            state.playbackLineIdx = Math.max(0, Math.min(state.playbackLineIdx + change, state.transcriptLines.length - 1));
-            focusLineRow(state.transcriptLines[state.playbackLineIdx].id);
+            state.playbackLineIdx = Math.max(0, Math.min(state.playbackLineIdx + change, playableLines.length - 1));
+            focusLineRow(playableLines[state.playbackLineIdx].id);
         }
 
         function _speakerMapState() {
@@ -648,10 +890,20 @@
                 addProvenanceRecord(
                     "Speaker Mapping",
                     `Saved authoritative speaker mapping for ${jobIds.length} transcript job(s).`,
-                    "user"
+                    "user",
+                    {
+                        eventType: 'speaker_mapping_saved',
+                        source: 'workspace',
+                        metadata: {
+                            job_ids: jobIds,
+                        },
+                    }
                 );
                 await loadTranscriptResultsIntoWorkspace(jobIds);
                 await loadWorkspaceSpeakerMapping();
+                if (typeof loadTranscriptProvenance === 'function' && jobIds[0]) {
+                    await loadTranscriptProvenance(jobIds[0]);
+                }
                 showToast("Speaker mapping saved to Stage 3 workspace.", "emerald");
             } catch (err) {
                 console.error('Workspace speaker mapping save failed:', err);
@@ -680,19 +932,195 @@
             return state.workspaceJob;
         }
 
+        function _snapshotState() {
+            if (!state.workspaceSnapshots) {
+                state.workspaceSnapshots = {
+                    jobId: null,
+                    items: [],
+                    selectedSnapshotId: null,
+                    lastLoadedAt: null,
+                };
+            }
+            return state.workspaceSnapshots;
+        }
+
+        function _workspaceSnapshotStatus(text, tone) {
+            const el = document.getElementById('workspaceSnapshotStatus');
+            if (!el) return;
+            el.innerText = text;
+            if (tone === 'warning') el.className = "text-[9px] font-mono text-amber-400";
+            else if (tone === 'ready') el.className = "text-[9px] font-mono text-emerald-400";
+            else if (tone === 'loading') el.className = "text-[9px] font-mono text-indigo-400";
+            else el.className = "text-[9px] font-mono text-slate-600";
+        }
+
+        function renderWorkspaceSnapshots() {
+            const root = document.getElementById('workspaceSnapshotList');
+            if (!root) return;
+            const snapshots = _snapshotState();
+            if (!snapshots.items || snapshots.items.length === 0) {
+                root.innerHTML = `<p class="text-[10px] text-slate-600 italic">No snapshots loaded.</p>`;
+                _workspaceSnapshotStatus('idle', 'idle');
+                return;
+            }
+            root.innerHTML = snapshots.items.map(item => {
+                const lockBadge = item.locked
+                    ? `<span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] font-bold">LOCKED</span>`
+                    : `<span class="px-1.5 py-0.5 rounded bg-slate-900 text-slate-500 border border-slate-800 text-[8px] font-bold">${item.category}</span>`;
+                const isSelected = snapshots.selectedSnapshotId === item.snapshot_id;
+                return `
+                    <div class="rounded-lg border ${isSelected ? 'border-indigo-500/40 bg-indigo-500/5' : 'border-slate-800 bg-slate-900/60'} p-2.5 space-y-2">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <p class="text-[10px] font-semibold text-slate-200 truncate">${item.note || 'Snapshot'}</p>
+                                <p class="text-[9px] text-slate-500 font-mono truncate">${item.created_at}</p>
+                            </div>
+                            ${lockBadge}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="restoreWorkspaceSnapshot('${item.snapshot_id}')" class="flex-1 px-2 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded text-[10px] font-semibold text-slate-300 hover:text-white transition-all">
+                                Restore
+                            </button>
+                            <button onclick="selectWorkspaceSnapshot('${item.snapshot_id}')" class="px-2 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded text-[10px] font-semibold text-slate-400 hover:text-white transition-all">
+                                View
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+            _workspaceSnapshotStatus(`${snapshots.items.length} loaded`, 'ready');
+        }
+
+        async function loadWorkspaceSnapshots() {
+            const jobId = _workspaceJob().jobId;
+            const snapshots = _snapshotState();
+            if (snapshots.jobId && snapshots.jobId !== jobId) {
+                snapshots.items = [];
+                snapshots.selectedSnapshotId = null;
+            }
+            snapshots.jobId = jobId || null;
+            if (!jobId || !window.api || typeof window.api.listSnapshots !== 'function') {
+                renderWorkspaceSnapshots();
+                return;
+            }
+            _workspaceSnapshotStatus('loading…', 'loading');
+            try {
+                const res = await window.api.listSnapshots(jobId);
+                snapshots.items = res.snapshots || [];
+                snapshots.lastLoadedAt = new Date().toISOString();
+                if (!snapshots.selectedSnapshotId && snapshots.items.length > 0) {
+                    snapshots.selectedSnapshotId = snapshots.items[0].snapshot_id;
+                }
+                renderWorkspaceSnapshots();
+            } catch (err) {
+                console.error('Snapshot load failed:', err);
+                _workspaceSnapshotStatus('load failed', 'warning');
+            }
+        }
+
+        function selectWorkspaceSnapshot(snapshotId) {
+            _snapshotState().selectedSnapshotId = snapshotId;
+            renderWorkspaceSnapshots();
+        }
+
+        async function createWorkspaceSnapshot() {
+            const jobId = _workspaceJob().jobId;
+            if (!jobId) {
+                showToast("Load a transcript before creating a snapshot.", "amber");
+                return;
+            }
+            if (!window.confirm("Create a manual snapshot of the current authoritative working transcript?")) {
+                return;
+            }
+            try {
+                await manualSaveWorkspaceTranscript();
+                const note = window.prompt("Optional snapshot note:", "Manual Stage 3 checkpoint") || "";
+                const snap = await window.api.createSnapshot(jobId, 'MANUAL', note, 'workspace');
+                _snapshotState().selectedSnapshotId = snap.snapshot_id;
+                showToast("Snapshot created.", "emerald");
+                await loadWorkspaceSnapshots();
+                if (typeof loadTranscriptProvenance === 'function') {
+                    await loadTranscriptProvenance(jobId);
+                }
+            } catch (err) {
+                showToast(`Snapshot failed: ${err.message}`, "red");
+                _workspaceSnapshotStatus('create failed', 'warning');
+            }
+        }
+
+        async function reloadWorkspaceTranscript() {
+            const jobIds = (state.activeTranscriptJobIds || []).slice();
+            if (jobIds.length === 0) {
+                showToast("No transcript loaded.", "amber");
+                return;
+            }
+            const saveState = _workspaceSaveState();
+            if ((saveState.dirty || saveState.pending || saveState.saving)
+                    && !window.confirm("Reload from the saved backend working transcript and discard unsaved local edits?")) {
+                return;
+            }
+            await loadTranscriptResultsIntoWorkspace(jobIds);
+            saveState.dirty = false;
+            saveState.pending = false;
+            saveState.lastError = null;
+            saveState.lastSavedAt = new Date().toISOString();
+            renderWorkspaceSaveStatus();
+            await loadWorkspaceSnapshots();
+            if (typeof loadTranscriptProvenance === 'function') {
+                await loadTranscriptProvenance(jobIds[0]);
+            }
+            showToast("Reloaded authoritative working transcript.", "emerald");
+        }
+
+        async function restoreWorkspaceSnapshot(snapshotId) {
+            const jobId = _workspaceJob().jobId;
+            if (!jobId) {
+                showToast("Load a transcript before restoring a snapshot.", "amber");
+                return;
+            }
+            if (!window.confirm("Restore this snapshot? This rolls the working transcript back to the selected saved state and records that rollback in the audit trail.")) {
+                return;
+            }
+            try {
+                await window.api.rollbackSnapshot(jobId, snapshotId, 'workspace');
+                const saveState = _workspaceSaveState();
+                saveState.dirty = false;
+                saveState.pending = false;
+                saveState.lastError = null;
+                saveState.lastSavedAt = new Date().toISOString();
+                await loadTranscriptResultsIntoWorkspace((state.activeTranscriptJobIds || []).slice());
+                await loadWorkspaceSnapshots();
+                if (typeof loadTranscriptProvenance === 'function') {
+                    await loadTranscriptProvenance(jobId);
+                }
+                renderWorkspaceSaveStatus();
+                showToast("Snapshot restored.", "emerald");
+            } catch (err) {
+                showToast(`Snapshot restore failed: ${err.message}`, "red");
+                _workspaceSnapshotStatus('restore failed', 'warning');
+            }
+        }
+
         // Bind the Workspace to a transcript job and load its Stage 3
         // speaker mapping plus AI review queue.
         async function loadWorkspaceJobContext(jobId) {
             const wj = _workspaceJob();
             wj.jobId = jobId;
             if (typeof loadWorkspaceSpeakerMapping === "function") {
-                loadWorkspaceSpeakerMapping();
+                await loadWorkspaceSpeakerMapping();
+            }
+            if (typeof loadWorkspaceSnapshots === "function") {
+                await loadWorkspaceSnapshots();
             }
             // Wave 16: load the AI review queue for this job.
             if (typeof refreshAIReviewStatus === "function") refreshAIReviewStatus();
             if (typeof loadAISuggestions === "function" && jobId) {
-                loadAISuggestions(jobId);
+                await loadAISuggestions(jobId);
             }
+            if (typeof loadTranscriptProvenance === "function" && jobId) {
+                await loadTranscriptProvenance(jobId);
+            }
+            renderWorkspaceSaveStatus();
         }
 
         function renderCorrectionMemory() {
@@ -711,6 +1139,18 @@
                     <span class="text-[8px] bg-slate-950 px-1 py-0.2 rounded text-slate-500 font-mono uppercase">${corr.scope}</span>
                 `;
                 container.appendChild(item);
+            });
+        }
+
+        if (!window.__depoWorkspaceHotkeysBound) {
+            window.__depoWorkspaceHotkeysBound = true;
+            window.addEventListener('keydown', function (event) {
+                if (state.currentStage !== 3) return;
+                const key = String(event.key || '').toLowerCase();
+                if ((event.ctrlKey || event.metaKey) && key === 's') {
+                    event.preventDefault();
+                    manualSaveWorkspaceTranscript();
+                }
             });
         }
 
@@ -737,9 +1177,17 @@ window.toggleAudioPlayback = toggleAudioPlayback;
 window.changeAudioSpeed = changeAudioSpeed;
 window.skipAudio = skipAudio;
 window.renderCorrectionMemory = renderCorrectionMemory;
+window.renderWorkspaceSaveStatus = renderWorkspaceSaveStatus;
+window.manualSaveWorkspaceTranscript = manualSaveWorkspaceTranscript;
+window.reloadWorkspaceTranscript = reloadWorkspaceTranscript;
 window.loadWorkspaceSpeakerMapping = loadWorkspaceSpeakerMapping;
 window.saveWorkspaceSpeakerMapping = saveWorkspaceSpeakerMapping;
 window.setWorkspaceSpeakerAssignment = setWorkspaceSpeakerAssignment;
+window.loadWorkspaceSnapshots = loadWorkspaceSnapshots;
+window.createWorkspaceSnapshot = createWorkspaceSnapshot;
+window.restoreWorkspaceSnapshot = restoreWorkspaceSnapshot;
+window.selectWorkspaceSnapshot = selectWorkspaceSnapshot;
+window.persistWorkspaceTranscript = persistWorkspaceTranscript;
 
 // ============================================================
 // Wave 16 — AI review queue panel.
@@ -831,13 +1279,13 @@ async function loadAISuggestions(jobId) {
     if (!list) return;
     try {
         const res = await window.api.listAISuggestions(jobId);
-        const pending = (res.suggestions || []).filter(s => s.status === "pending");
+        const visible = (res.suggestions || []).filter(s => s.status !== "rejected");
         list.innerHTML = "";
-        if (pending.length === 0) {
-            list.innerHTML = `<p class="text-[10px] text-slate-600 italic">No pending AI suggestions.</p>`;
+        if (visible.length === 0) {
+            list.innerHTML = `<p class="text-[10px] text-slate-600 italic">No active AI suggestions.</p>`;
             return;
         }
-        pending.forEach(s => list.appendChild(_aiSuggestionCard(s)));
+        visible.forEach(s => list.appendChild(_aiSuggestionCard(s)));
     } catch (err) {
         list.innerHTML = `<p class="text-[10px] text-red-400">Could not load suggestions.</p>`;
     }
@@ -850,6 +1298,12 @@ function _aiSuggestionCard(s) {
     const badge = s.is_applicable_edit
         ? `<span class="text-[8px] px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/25">EDIT</span>`
         : `<span class="text-[8px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/25">FLAG — REVIEW</span>`;
+    const applied = !!(s.payload && s.payload.applied_to_transcript);
+    const statusBadge = s.status === 'approved'
+        ? applied
+            ? `<span class="text-[8px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">APPLIED</span>`
+            : `<span class="text-[8px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">APPROVED</span>`
+        : `<span class="text-[8px] px-1 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800">PENDING</span>`;
     let detail = "";
     if (s.kind === "speaker_map" && s.payload && s.payload.speaker_map) {
         const rows = Object.entries(s.payload.speaker_map)
@@ -863,15 +1317,24 @@ function _aiSuggestionCard(s) {
     card.innerHTML = `
         <div class="flex items-center justify-between">
             <span class="text-[9px] font-bold uppercase tracking-wider text-slate-400">${s.kind}</span>
-            ${badge}
+            <div class="flex items-center gap-1">${badge}${statusBadge}</div>
         </div>
         <p class="text-[10px] text-slate-300 leading-snug">${s.reason || ""}</p>
         ${detail}
         <div class="flex gap-1 pt-0.5">
+            ${s.status === 'pending' ? `
             <button onclick="approveAISuggestion('${s.suggestion_id}')"
                 class="flex-1 text-[9px] font-bold text-white bg-emerald-700 hover:bg-emerald-600 rounded py-1">Approve</button>
             <button onclick="rejectAISuggestion('${s.suggestion_id}')"
                 class="flex-1 text-[9px] font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 rounded py-1">Reject</button>
+            ` : s.is_applicable_edit && !applied ? `
+            <button onclick="applyApprovedAISuggestion('${s.suggestion_id}')"
+                class="flex-1 text-[9px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded py-1">Apply to Transcript</button>
+            ` : `
+            <div class="flex-1 text-[9px] text-slate-500 bg-slate-900 rounded py-1 text-center border border-slate-800">
+                ${applied ? 'Already applied to working transcript' : 'Approval logged — no direct transcript change'}
+            </div>
+            `}
         </div>`;
     return card;
 }
@@ -880,7 +1343,11 @@ async function approveAISuggestion(suggestionId) {
     try {
         await window.api.approveAISuggestion(suggestionId);
         showToast("Suggestion approved.", "emerald");
-        addProvenanceRecord("AI Review", `Approved AI suggestion ${suggestionId.slice(0, 8)}.`, "user");
+        addProvenanceRecord("AI Review", `Approved AI suggestion ${suggestionId.slice(0, 8)}. Approval does not modify transcript text.`, "user", {
+            eventType: 'ai_suggestion_approved',
+            source: 'ai_review',
+            relatedSuggestionId: suggestionId,
+        });
         const sp = (typeof _workspaceJob === "function") ? _workspaceJob() : null;
         if (sp && sp.jobId) await loadAISuggestions(sp.jobId);
     } catch (err) {
@@ -888,10 +1355,43 @@ async function approveAISuggestion(suggestionId) {
     }
 }
 
+async function applyApprovedAISuggestion(suggestionId) {
+    try {
+        const res = await window.api.applyAISuggestion(suggestionId);
+        showToast("Approved suggestion applied to working transcript.", "emerald");
+        addProvenanceRecord("AI Review Apply", `Applied approved AI suggestion ${suggestionId.slice(0, 8)} to the working transcript.`, "user", {
+            eventType: 'ai_suggestion_apply_requested',
+            source: 'ai_review',
+            relatedSuggestionId: suggestionId,
+        });
+        const sp = (typeof _workspaceJob === "function") ? _workspaceJob() : null;
+        if (sp && sp.jobId) {
+            await loadTranscriptResultsIntoWorkspace([sp.jobId]);
+            await loadAISuggestions(sp.jobId);
+            if (typeof loadTranscriptProvenance === 'function') {
+                await loadTranscriptProvenance(sp.jobId);
+            }
+        }
+        const saveState = _workspaceSaveState();
+        saveState.dirty = false;
+        saveState.pending = false;
+        saveState.lastError = null;
+        saveState.lastSavedAt = new Date().toISOString();
+        renderWorkspaceSaveStatus();
+    } catch (err) {
+        showToast(`Apply failed: ${err.message}`, "red");
+    }
+}
+
 async function rejectAISuggestion(suggestionId) {
     try {
         await window.api.rejectAISuggestion(suggestionId);
         showToast("Suggestion rejected.", "cyan");
+        addProvenanceRecord("AI Review", `Rejected AI suggestion ${suggestionId.slice(0, 8)}.`, "user", {
+            eventType: 'ai_suggestion_rejected',
+            source: 'ai_review',
+            relatedSuggestionId: suggestionId,
+        });
         const sp = (typeof _workspaceJob === "function") ? _workspaceJob() : null;
         if (sp && sp.jobId) await loadAISuggestions(sp.jobId);
     } catch (err) {
@@ -904,6 +1404,7 @@ window.requestAISpeakerMap = requestAISpeakerMap;
 window.requestAIAnalysis = requestAIAnalysis;
 window.loadAISuggestions = loadAISuggestions;
 window.approveAISuggestion = approveAISuggestion;
+window.applyApprovedAISuggestion = applyApprovedAISuggestion;
 window.rejectAISuggestion = rejectAISuggestion;
 // Workspace job context (binds the AI review queue to a job)
 window.loadWorkspaceJobContext = loadWorkspaceJobContext;

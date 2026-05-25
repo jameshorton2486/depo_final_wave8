@@ -35,6 +35,26 @@
             hydrateFromServer();
         };
 
+        function workspaceHasUnsavedChanges() {
+            const saveState = state.workspaceSave || {};
+            return !!(saveState.dirty || saveState.pending || saveState.saving);
+        }
+
+        function confirmDiscardWorkspaceChanges(message) {
+            if (!workspaceHasUnsavedChanges()) return true;
+            return window.confirm(
+                message ||
+                "You have unsaved transcript changes. Continue and discard local edits that have not been saved yet?"
+            );
+        }
+
+        window.addEventListener('beforeunload', function (event) {
+            if (!workspaceHasUnsavedChanges()) return;
+            event.preventDefault();
+            event.returnValue = 'You have unsaved transcript changes.';
+            return event.returnValue;
+        });
+
         function defaultStage1State() {
             return {
                 rawIntakeNotes: '',
@@ -56,6 +76,9 @@
         }
 
         function resetVolatileCaseState() {
+            if (state.workspaceSave && state.workspaceSave.timer) {
+                clearTimeout(state.workspaceSave.timer);
+            }
             state.sessionId = null;
             state.reporterId = null;
             state.stage1 = defaultStage1State();
@@ -64,6 +87,20 @@
             state.activeTranscriptJobIds = [];
             state.workspaceJob = { jobId: null };
             state.workspaceSpeakerMapping = { jobs: [], assignments: {} };
+            state.workspaceSnapshots = {
+                jobId: null,
+                items: [],
+                selectedSnapshotId: null,
+                lastLoadedAt: null,
+            };
+            state.workspaceSave = {
+                dirty: false,
+                pending: false,
+                saving: false,
+                lastSavedAt: null,
+                lastError: null,
+                timer: null,
+            };
             state.transcriptLines = [];
             state.focusedLineId = null;
             const rawNotesField = document.getElementById('rawIntakeNotes');
@@ -123,6 +160,11 @@
         async function loadCaseById(caseId, silent) {
             if (!window.api) return;
             try {
+                if (!silent && !confirmDiscardWorkspaceChanges(
+                    "You have unsaved transcript changes. Switch cases and discard any unsaved Stage 3 edits?"
+                )) {
+                    return;
+                }
                 resetVolatileCaseState();
                 const caseRow = await window.api.getCase(caseId);
                 state.caseId = caseRow.case_id;
@@ -172,6 +214,11 @@
 
         // Discard current state and start a blank case (no server call until save).
         function newCase() {
+            if (!confirmDiscardWorkspaceChanges(
+                "You have unsaved transcript changes. Start a new case and discard any unsaved Stage 3 edits?"
+            )) {
+                return;
+            }
             state.caseId = null;
             resetVolatileCaseState();
             Object.assign(state.caseInfo, {
@@ -259,10 +306,25 @@
         }
 
 
-        function goToStage(stageNum) {
+        async function goToStage(stageNum) {
             if (state.caseInfo.certified && stageNum < 5) {
                 showToast("This transcript is CERTIFIED and LOCKED. Request unlock to edit.", "red");
                 return;
+            }
+            if (state.currentStage === 3 && stageNum !== 3 && !confirmDiscardWorkspaceChanges(
+                "You have unsaved transcript changes. Leave Stage 3 and discard any edits that have not been saved yet?"
+            )) {
+                return;
+            }
+            if (state.currentStage === 3 && typeof window.persistWorkspaceTranscript === 'function') {
+                const saveState = state.workspaceSave || {};
+                if (saveState.timer) {
+                    clearTimeout(saveState.timer);
+                    saveState.timer = null;
+                }
+                if (saveState.pending || saveState.saving) {
+                    await window.persistWorkspaceTranscript('stage_transition');
+                }
             }
 
             // Update tab highlights
@@ -424,8 +486,10 @@
                     compileAndRenderTranscript && compileAndRenderTranscript();
                     renderCorrectionMemory && renderCorrectionMemory();
                     renderProvenanceTimeline && renderProvenanceTimeline();
+                    renderWorkspaceSaveStatus && renderWorkspaceSaveStatus();
                     updateStatsBar && updateStatsBar();
                     loadWorkspaceSpeakerMapping && loadWorkspaceSpeakerMapping();
+                    loadWorkspaceSnapshots && loadWorkspaceSnapshots();
                 } else if (stageNum === 4) {
                     renderExhibitsIndex && renderExhibitsIndex();
                 } else if (stageNum === 5) {
@@ -455,3 +519,4 @@ window.refreshCasePicker = refreshCasePicker;
 window.refreshCasePickerLabel = refreshCasePickerLabel;
 window.toggleCasePicker = toggleCasePicker;
 window.resetVolatileCaseState = resetVolatileCaseState;
+window.workspaceHasUnsavedChanges = workspaceHasUnsavedChanges;

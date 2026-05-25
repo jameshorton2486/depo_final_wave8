@@ -536,3 +536,42 @@ def test_packaging_certify_full_workflow(client, sample_job_with_content):
     again = client.post(f"/api/packages/{pkg_id}/certify",
                         json={"metadata": metadata})
     assert again.status_code == 400
+
+    provenance = client.get(f"/api/transcripts/jobs/{job_id}/provenance").json()
+    assert any(ev["event_type"] == "certification_frozen" for ev in provenance["events"])
+
+
+def test_packaging_uses_locked_snapshot_state_not_live_db(client, sample_job_with_content):
+    from backend.api.packaging import _build_paginated_from_snapshot_state
+    from backend.transcript import working_state
+    from backend.transcript_state import snapshot_repo
+
+    job_id = sample_job_with_content
+    working_state.persist_working_transcript(
+        job_id,
+        [{"utterance_id": "utt-1", "working_text": "Snapshot-owned witness answer."}],
+        source="test_suite",
+    )
+
+    snap_res = client.post(f"/api/snapshots/jobs/{job_id}", json={"category": "CERTIFIED"})
+    assert snap_res.status_code == 200
+    snap_id = snap_res.json()["snapshot_id"]
+    assert client.post(f"/api/snapshots/{snap_id}/lock").status_code == 200
+
+    # Mutate the LIVE working transcript after the snapshot is locked.
+    working_state.persist_working_transcript(
+        job_id,
+        [{"utterance_id": "utt-1", "working_text": "Live database text after lock."}],
+        source="test_suite",
+    )
+
+    snap = snapshot_repo.get_snapshot(snap_id)
+    paginated = _build_paginated_from_snapshot_state(snap.state)
+    body_text = "\n".join(
+        slot.physical_line.text
+        for page in paginated.pages
+        for slot in page.slots
+        if slot.physical_line is not None
+    )
+    assert "Snapshot-owned witness answer." in body_text
+    assert "Live database text after lock." not in body_text

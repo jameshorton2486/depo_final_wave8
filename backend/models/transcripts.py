@@ -69,6 +69,11 @@ class TranscriptUtterance(BaseModel):
     start_time: float
     end_time: float
     text: str
+    raw_text: Optional[str] = None
+    working_text: Optional[str] = None
+    is_working_override: bool = False
+    working_source: Optional[str] = None
+    working_updated_at: Optional[str] = None
     avg_confidence: Optional[float] = None
 
 
@@ -169,6 +174,62 @@ class SpeakerMappingApplyResponse(BaseModel):
     lines: list[dict]          # rendered WorkingLine dicts
     unmapped_cluster_count: int
     correction_engine_ran: bool
+
+
+# --------------------------------------------------------------------
+# Stage 3 authoritative working transcript state
+# --------------------------------------------------------------------
+
+
+class WorkingTranscriptUtterance(BaseModel):
+    utterance_id: str
+    working_text: str
+
+
+class WorkingTranscriptSaveRequest(BaseModel):
+    utterances: list[WorkingTranscriptUtterance]
+    source: str = "stage3_workspace"
+
+
+class WorkingTranscriptSaveResponse(BaseModel):
+    job_id: str
+    saved: int
+    removed: int
+    override_count: int
+    working_packet_path: Optional[str] = None
+
+
+class TranscriptProvenanceEvent(BaseModel):
+    event_id: str
+    job_id: str
+    event_type: str
+    title: str
+    detail: str = ""
+    actor_type: str = "system"
+    source: str = ""
+    metadata: dict = {}
+    related_snapshot_id: str = ""
+    related_suggestion_id: str = ""
+    related_package_id: str = ""
+    created_at: str
+
+
+class TranscriptProvenanceListResponse(BaseModel):
+    job_id: str
+    events: list[TranscriptProvenanceEvent]
+    count: int
+
+
+class TranscriptProvenanceCreateRequest(BaseModel):
+    event_type: str
+    title: str
+    detail: str = ""
+    actor_type: str = "system"
+    source: str = "workspace"
+    metadata: dict = {}
+    related_snapshot_id: str = ""
+    related_suggestion_id: str = ""
+    related_package_id: str = ""
 
 
 # --------------------------------------------------------------------

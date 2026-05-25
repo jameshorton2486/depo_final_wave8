@@ -22,6 +22,7 @@ from typing import Optional
 from loguru import logger
 
 from backend.transcript.render import build_index_map
+from backend.transcript import working_state as working_state_mod
 
 
 def run_correction_engine_for_job(
@@ -52,7 +53,7 @@ def run_correction_engine_for_job(
         logger.info(f"No confirmed mapping for {job_id}; correction engine not run.")
         return None
 
-    utterances = trepo.get_utterances(job_id)
+    utterances = working_state_mod.get_working_utterances(job_id)
     index_map = build_index_map(participants)
 
     engine_input: list = []

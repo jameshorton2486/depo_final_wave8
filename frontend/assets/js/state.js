@@ -90,6 +90,20 @@
             workspaceSpeakerMapping: {
                 jobs: [],
                 assignments: {},
+            },
+            workspaceSnapshots: {
+                jobId: null,
+                items: [],
+                selectedSnapshotId: null,
+                lastLoadedAt: null,
+            },
+            workspaceSave: {
+                dirty: false,
+                pending: false,
+                saving: false,
+                lastSavedAt: null,
+                lastError: null,
+                timer: null,
             }
         };
 window.state = state;

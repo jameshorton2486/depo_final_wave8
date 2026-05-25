@@ -137,6 +137,41 @@ def test_snapshot_rollback_restores_speaker_indices(sample_job_with_content):
     assert restored[1]["role"] == "witness"
 
 
+def test_snapshot_rollback_restores_working_transcript(sample_job_with_content):
+    from backend.transcript import repository as trepo
+    from backend.transcript import provenance as provenance_mod
+    from backend.transcript import working_state
+    from backend.transcript_state import snapshot_service
+
+    working_state.persist_working_transcript(
+        sample_job_with_content,
+        [{"utterance_id": "utt-1", "working_text": "My full legal name is Dana Reed."}],
+        source="test_suite",
+    )
+    snap = snapshot_service.create_snapshot(sample_job_with_content, category="MANUAL")
+
+    working_state.persist_working_transcript(
+        sample_job_with_content,
+        [{"utterance_id": "utt-1", "working_text": "Changed after snapshot."}],
+        source="test_suite",
+    )
+    changed = next(
+        u for u in trepo.get_utterances(sample_job_with_content, layer="working")
+        if u["utterance_id"] == "utt-1"
+    )
+    assert changed["text"] == "Changed after snapshot."
+
+    snapshot_service.rollback_to(sample_job_with_content, snap.snapshot_id)
+    restored = next(
+        u for u in trepo.get_utterances(sample_job_with_content, layer="working")
+        if u["utterance_id"] == "utt-1"
+    )
+    assert restored["text"] == "My full legal name is Dana Reed."
+
+    provenance = provenance_mod.list_events(sample_job_with_content)
+    assert any(ev["event_type"] == "snapshot_restored" for ev in provenance)
+
+
 # --- endpoints -------------------------------------------------------
 
 def test_create_snapshot_unknown_job_404(client):

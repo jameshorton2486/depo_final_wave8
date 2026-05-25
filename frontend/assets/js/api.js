@@ -337,6 +337,18 @@
         getTranscriptContent(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/content`);
         },
+        saveWorkingTranscript(jobId, utterances, source) {
+            return _fetch('PUT', `/transcripts/jobs/${encodeURIComponent(jobId)}/working-transcript`, {
+                utterances: utterances || [],
+                source: source || 'stage3_workspace',
+            });
+        },
+        listTranscriptProvenance(jobId) {
+            return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/provenance`);
+        },
+        recordTranscriptProvenance(jobId, payload) {
+            return _fetch('POST', `/transcripts/jobs/${encodeURIComponent(jobId)}/provenance`, payload || {});
+        },
         // Stage 3 Workspace is the authoritative speaker-mapping UI.
         // These APIs remain under /transcripts for compatibility.
         getSpeakerMapping(jobId) {
@@ -357,12 +369,13 @@
             // Wave 12: export preview for a transient unsaved transcript.
             return _fetch('POST', '/transcripts/export-preview/fallback', payload);
         },
-        exportTranscript(jobId, fmt, destination, explicitPath) {
+        exportTranscript(jobId, fmt, destination, explicitPath, snapshotId) {
             // Wave 18: backend renders and writes a real file to disk.
             return _fetch('POST', `/transcripts/jobs/${encodeURIComponent(jobId)}/export`, {
                 fmt: fmt,
                 destination: destination,
                 explicit_path: explicitPath || null,
+                snapshot_id: snapshotId || null,
             });
         },
         // --- AI review layer (Wave 15b / 16) ------------------------
@@ -383,6 +396,9 @@
         approveAISuggestion(suggestionId) {
             return _fetch('POST', `/ai-review/suggestions/${encodeURIComponent(suggestionId)}/approve`);
         },
+        applyAISuggestion(suggestionId) {
+            return _fetch('POST', `/ai-review/suggestions/${encodeURIComponent(suggestionId)}/apply`);
+        },
         rejectAISuggestion(suggestionId) {
             return _fetch('POST', `/ai-review/suggestions/${encodeURIComponent(suggestionId)}/reject`);
         },
@@ -402,12 +418,28 @@
         },
 
         // Snapshots (packaging workflow — Wave 18.5)
-        createSnapshot(jobId, category) {
+        createSnapshot(jobId, category, note, createdBy) {
             return _fetch('POST', `/snapshots/jobs/${encodeURIComponent(jobId)}`,
-                          { category: category || 'CERTIFIED' });
+                          {
+                              category: category || 'CERTIFIED',
+                              note: note || '',
+                              created_by: createdBy || '',
+                          });
+        },
+        listSnapshots(jobId) {
+            return _fetch('GET', `/snapshots/jobs/${encodeURIComponent(jobId)}`);
+        },
+        getSnapshot(snapshotId) {
+            return _fetch('GET', `/snapshots/${encodeURIComponent(snapshotId)}`);
         },
         lockSnapshot(snapshotId) {
             return _fetch('POST', `/snapshots/${encodeURIComponent(snapshotId)}/lock`);
+        },
+        rollbackSnapshot(jobId, snapshotId, createdBy) {
+            return _fetch('POST', `/snapshots/jobs/${encodeURIComponent(jobId)}/rollback`, {
+                snapshot_id: snapshotId,
+                created_by: createdBy || 'workspace',
+            });
         },
 
         // Packages (Wave 20)

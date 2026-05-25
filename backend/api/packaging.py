@@ -16,6 +16,7 @@ import json
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, status
+from loguru import logger
 from pydantic import BaseModel
 
 from backend.packaging import (
@@ -32,6 +33,7 @@ from backend.packaging.package_repo import (
     update_package_state,
 )
 from backend.transcript import repository as trepo
+from backend.transcript import provenance as provenance_mod
 from backend.transcript_state import snapshot_repo
 from backend.services import intake_store
 
@@ -358,18 +360,72 @@ class CertifyRequest(BaseModel):
 # Helper: build a paginated document for a job
 # ---------------------------------------------------------------------------
 
-def _build_paginated_for_job(job_id: str, job_row: dict):
-    """Return a PaginatedDocument for a job's current working state.
+def _build_paginated_from_snapshot_state(snapshot_state: dict):
+    """Return a PaginatedDocument from a locked snapshot's working state.
 
-    Runs the same Stage S pipeline as the export-preview endpoint so the
-    packaging engine receives the same body the exporter would write.
-    Returns None when the transcript body is empty (no utterances).
+    Certification and packaging must freeze from the snapshot state, not
+    from the current mutable live database rows.
     """
     from backend.stage_s.renderer import render_stage_s
     from backend.transcript.export_render import render_export_with_layout
 
-    utterances = trepo.get_utterances(job_id) or []
-    participants = trepo.get_participants(job_id) or []
+    working = snapshot_state.get("working_utterances") or []
+    utterances = [
+        {
+            "utterance_id": u.get("utterance_id"),
+            "utterance_index": u.get("utterance_index"),
+            "speaker_index": u.get("speaker_index"),
+            "speaker_label": u.get("speaker_label") or "",
+            "start_time": u.get("start_time") or 0.0,
+            "end_time": u.get("end_time") or 0.0,
+            "text": u.get("text") or u.get("raw_text") or "",
+            "avg_confidence": None,
+        }
+        for u in working
+    ]
+    try:
+        from backend.corrections.regex_rules import RegexRule, apply_regex_rules
+
+        rules = [
+            RegexRule(
+                rule_id=r.get("rule_id", ""),
+                find_pattern=r.get("find_pattern", ""),
+                replace_with=r.get("replace_with", ""),
+                rule_order=r.get("rule_order", 0),
+                enabled=r.get("enabled", True),
+                description=r.get("description", ""),
+            )
+            for r in (snapshot_state.get("regex_rule_state") or [])
+        ]
+        if rules:
+            utterances, _ = apply_regex_rules(utterances, rules)
+    except Exception:
+        pass
+    try:
+        from backend.lexicon.merge import merge_from_job_config
+        from backend.lexicon.stage_x import apply_stage_x
+
+        lexicon_cfg = snapshot_state.get("lexicon_state") or {}
+        lexicon = merge_from_job_config({
+            "confirmed_spellings": lexicon_cfg.get("confirmed_spellings") or {},
+            "intake_keyterms": lexicon_cfg.get("intake_keyterms") or [],
+        })
+        if len(lexicon) > 0:
+            utterances, _ = apply_stage_x(utterances, lexicon)
+    except Exception:
+        pass
+    participants = [
+        {
+            "participant_id": p.get("participant_id"),
+            "name": p.get("name"),
+            "role": p.get("role") or "other",
+            "speaker_indices": p.get("speaker_indices") or [],
+            "sort_order": idx,
+            "name_source": p.get("name_source"),
+            "honorific": p.get("honorific"),
+        }
+        for idx, p in enumerate(snapshot_state.get("speaker_mapping") or [])
+    ]
 
     # Stage S structural render
     stage_s = render_stage_s(utterances, participants)
@@ -431,15 +487,17 @@ def assemble(job_id: str, payload: AssembleRequest) -> dict:
                     "Lock the snapshot first (POST /api/snapshots/{id}/lock) "
                     "before assembling a package."))
 
-    job_row = trepo.get_job(job_id) or {}
-
-    # Build the paginated body from the job's working lines.
+    # Build the paginated body from the LOCKED snapshot state.
     try:
-        paginated = _build_paginated_for_job(job_id, job_row)
+        paginated = _build_paginated_from_snapshot_state(snap.state or {})
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to paginate transcript for packaging: {exc}")
+    logger.info(
+        f"Packaging assemble for {job_id} frozen to snapshot {snap.snapshot_id} "
+        f"(locked={snap.locked}, hash={snap.state_hash[:12]})"
+    )
 
     # Auto-populate metadata from DB; explicit payload fields win.
     metadata = _build_metadata_for_job(job_id, payload.metadata or {})
@@ -526,6 +584,27 @@ def certify(package_id: str, payload: CertifyRequest) -> dict:
     update_package_state(package_id, "CERTIFIED", certified)
 
     result = get_package(package_id) or {}
+    try:
+        provenance_mod.record_event(
+            job_id,
+            event_type="certification_frozen",
+            title="Certification Frozen",
+            detail=f"Package {package_id} certified from locked snapshot.",
+            actor_type="system",
+            source="packaging",
+            metadata={
+                "snapshot_id": result.get("snapshot_id") or summary.get("snapshot_id"),
+                "manifest_hash": result.get("manifest_hash") or "",
+            },
+            related_snapshot_id=result.get("snapshot_id") or summary.get("snapshot_id") or "",
+            related_package_id=package_id,
+        )
+    except Exception as exc:
+        logger.warning(f"certification provenance record failed: {exc}")
+    logger.info(
+        f"Package {package_id} certified from snapshot "
+        f"{result.get('snapshot_id') or summary.get('snapshot_id')}"
+    )
     return {
         **result,
         "certified": True,

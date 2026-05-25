@@ -244,6 +244,15 @@ _SPEAKER_COLUMNS = (
     "word_count",
 )
 
+_WORKING_UTTERANCE_COLUMNS = (
+    "working_row_id",
+    "job_id",
+    "utterance_id",
+    "working_text",
+    "source",
+    "updated_at",
+)
+
 
 def save_transcript_content(
     job_id: str,
@@ -323,14 +332,31 @@ def save_transcript_content(
             )
 
 
-def get_utterances(job_id: str) -> list[dict]:
+def get_utterances(job_id: str, layer: str = "raw") -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
             f"SELECT {', '.join(_UTTERANCE_COLUMNS)} FROM transcript_utterances "
             "WHERE job_id = ? ORDER BY utterance_index ASC",
             (job_id,),
         ).fetchall()
-    return [{col: r[col] for col in _UTTERANCE_COLUMNS} for r in rows]
+    utterances = [{col: r[col] for col in _UTTERANCE_COLUMNS} for r in rows]
+    if layer == "raw":
+        return utterances
+    if layer != "working":
+        raise ValueError(f"Unknown utterance layer '{layer}'")
+
+    overrides = get_working_utterance_map(job_id)
+    for utt in utterances:
+        raw_text = utt.get("text") or ""
+        override = overrides.get(utt["utterance_id"])
+        utt["raw_text"] = raw_text
+        utt["working_text"] = override.get("working_text") if override else None
+        utt["is_working_override"] = bool(override)
+        utt["working_source"] = override.get("source") if override else None
+        utt["working_updated_at"] = override.get("updated_at") if override else None
+        if override:
+            utt["text"] = override.get("working_text") or ""
+    return utterances
 
 
 def get_words(job_id: str) -> list[dict]:
@@ -351,6 +377,103 @@ def get_speakers(job_id: str) -> list[dict]:
             (job_id,),
         ).fetchall()
     return [{col: r[col] for col in _SPEAKER_COLUMNS} for r in rows]
+
+
+def get_working_utterance_overrides(job_id: str) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT {', '.join(_WORKING_UTTERANCE_COLUMNS)} "
+            "FROM transcript_working_utterances "
+            "WHERE job_id = ? ORDER BY updated_at ASC, rowid ASC",
+            (job_id,),
+        ).fetchall()
+    return [{col: r[col] for col in _WORKING_UTTERANCE_COLUMNS} for r in rows]
+
+
+def get_working_utterance_map(job_id: str) -> dict[str, dict]:
+    return {
+        row["utterance_id"]: row
+        for row in get_working_utterance_overrides(job_id)
+    }
+
+
+def save_working_utterance_overrides(
+    job_id: str,
+    overrides: list[dict],
+    *,
+    source: str = "stage3_workspace",
+) -> dict:
+    """Persist utterance-level working transcript overrides.
+
+    Only utterances whose working text differs from RAW are stored. If a
+    working text equals RAW again, its override row is removed so the raw
+    layer continues to be the default source of truth.
+    """
+    raw_rows = get_utterances(job_id, layer="raw")
+    raw_map = {u["utterance_id"]: u for u in raw_rows}
+
+    saved = 0
+    removed = 0
+    with get_connection() as conn:
+        for item in overrides or []:
+            utterance_id = item.get("utterance_id")
+            if utterance_id not in raw_map:
+                raise ValueError(
+                    f"Utterance {utterance_id} does not belong to job {job_id}"
+                )
+            raw_text = raw_map[utterance_id].get("text") or ""
+            working_text = (item.get("working_text") or "").strip()
+            if working_text == raw_text:
+                cur = conn.execute(
+                    "DELETE FROM transcript_working_utterances "
+                    "WHERE utterance_id = ?",
+                    (utterance_id,),
+                )
+                removed += cur.rowcount
+                continue
+
+            existing = conn.execute(
+                "SELECT working_row_id FROM transcript_working_utterances "
+                "WHERE utterance_id = ?",
+                (utterance_id,),
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE transcript_working_utterances "
+                    "SET working_text = ?, source = ?, updated_at = datetime('now') "
+                    "WHERE utterance_id = ?",
+                    (working_text, source, utterance_id),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO transcript_working_utterances "
+                    "(working_row_id, job_id, utterance_id, working_text, source) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (new_id(), job_id, utterance_id, working_text, source),
+                )
+            saved += 1
+
+    return {
+        "job_id": job_id,
+        "saved": saved,
+        "removed": removed,
+        "override_count": len(get_working_utterance_overrides(job_id)),
+    }
+
+
+def replace_working_utterance_overrides(
+    job_id: str,
+    working_utterances: list[dict],
+    *,
+    source: str = "snapshot_rollback",
+) -> dict:
+    """Replace a job's full working transcript state from snapshot data."""
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM transcript_working_utterances WHERE job_id = ?",
+            (job_id,),
+        )
+    return save_working_utterance_overrides(job_id, working_utterances, source=source)
 
 
 # ====================================================================

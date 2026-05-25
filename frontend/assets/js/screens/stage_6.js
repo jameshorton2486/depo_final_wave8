@@ -20,6 +20,26 @@ function _activeJobId() {
     return ids.length > 0 ? ids[0] : null;
 }
 
+async function _resolveCertifiedSnapshotId(jobId) {
+    if (state.caseInfo && state.caseInfo.certifiedSnapshotId) {
+        return state.caseInfo.certifiedSnapshotId;
+    }
+    if (!jobId || !window.api || typeof window.api.listSnapshots !== 'function') {
+        return null;
+    }
+    try {
+        const res = await window.api.listSnapshots(jobId);
+        const locked = (res.snapshots || []).find(s => s.locked);
+        if (locked) {
+            state.caseInfo.certifiedSnapshotId = locked.snapshot_id;
+            return locked.snapshot_id;
+        }
+    } catch (err) {
+        console.warn('Could not resolve certified snapshot id:', err);
+    }
+    return null;
+}
+
 // Build the fallback payload from current frontend transcript state.
 function _fallbackPayload() {
     const lines = (state.transcriptLines || [])
@@ -44,11 +64,13 @@ function _fallbackPayload() {
 async function refreshExportPreview() {
     const btn = document.getElementById('refreshPreviewBtn');
     const statusLine = document.getElementById('previewStatusLine');
+    const authorityBanner = document.getElementById('exportAuthorityBanner');
     if (btn) { btn.disabled = true; btn.innerText = "Rendering…"; }
     if (statusLine) statusLine.innerText = "Rendering current transcript…";
 
     try {
         const jobId = _activeJobId();
+        const certifiedSnapshotId = jobId ? await _resolveCertifiedSnapshotId(jobId) : null;
         if (jobId) {
             _exportDoc = await window.api.getExportPreview(jobId);
         } else {
@@ -61,6 +83,11 @@ async function refreshExportPreview() {
             statusLine.innerText = _exportDoc.is_approximate
                 ? `Approximate preview (unsaved transcript) — ${_exportDoc.total_pages} page(s), rendered ${when}`
                 : `Authoritative preview — ${_exportDoc.total_pages} page(s), ${_exportDoc.total_lines} line(s), rendered ${when}`;
+        }
+        if (authorityBanner) {
+            authorityBanner.innerText = certifiedSnapshotId
+                ? "Certified snapshot available: manual exports can freeze from the locked certification snapshot. Preview remains the current working transcript unless certification packaging is used."
+                : "Working export mode: renders the current authoritative working transcript. Certified snapshot export becomes available after Stage 5 certification.";
         }
         if (typeof showToast === "function") {
             showToast(`Preview refreshed — ${_exportDoc.total_pages} page(s).`,
@@ -170,19 +197,34 @@ async function triggerExportAction() {
     const btn = document.getElementById('exportActionBtn');
     if (btn) { btn.disabled = true; }
     try {
+        const snapshotId = await _resolveCertifiedSnapshotId(jobId);
         const res = await window.api.exportTranscript(
-            jobId, format, explicitPath ? 'path' : destination, explicitPath);
+            jobId,
+            format,
+            explicitPath ? 'path' : destination,
+            explicitPath,
+            snapshotId
+        );
         if (typeof showToast === "function") {
             showToast(`Saved: ${res.path}`, "emerald");
         }
         if (typeof addProvenanceRecord === "function") {
             addProvenanceRecord("Export",
-                `Exported ${res.format.toUpperCase()} (${res.pages} page(s)) to ${res.path}`, "user");
+                `Exported ${res.format.toUpperCase()} (${res.pages} page(s)) to ${res.path}`, "user", {
+                    eventType: 'export_requested',
+                    source: 'export',
+                    metadata: {
+                        format: res.format,
+                        export_state: res.export_state || 'working',
+                        path: res.path,
+                    },
+                    relatedSnapshotId: res.snapshot_id || '',
+                });
         }
         // Surface the saved path in the status line so it does not vanish.
         const statusLine = document.getElementById('previewStatusLine');
         if (statusLine) {
-            statusLine.innerText = `Saved ${res.format.toUpperCase()} — ${res.path}`;
+            statusLine.innerText = `Saved ${res.format.toUpperCase()} (${res.export_state === 'certified_snapshot' ? 'certified snapshot export' : 'working transcript export'}) — ${res.path}`;
         }
     } catch (err) {
         if (typeof showToast === "function")

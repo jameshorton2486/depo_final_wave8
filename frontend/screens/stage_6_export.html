@@ -7,6 +7,9 @@
                         Compile & Export Certified Case File
                     </h2>
                     <p class="text-sm text-slate-400 mb-6 leading-relaxed">Extract final legally certified depositions. Choose formatting specifications matching target jurisdiction.</p>
+                    <div id="exportAuthorityBanner" class="mb-4 px-3 py-2 rounded-xl border border-slate-800 bg-slate-950 text-[11px] text-slate-300">
+                        Working export mode: renders the current authoritative working transcript. Certified snapshot export becomes available after Stage 5 certification.
+                    </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div>
@@ -65,7 +68,7 @@
                             ⟳ Refresh Preview
                         </button>
                     </div>
-                    <p class="text-xs text-slate-400 mb-2 leading-relaxed">Rendered from the current WORKING transcript by the same pipeline that produces the export file — speaker mapping, Q/A typing, and corrections all reflected.</p>
+                    <p class="text-xs text-slate-400 mb-2 leading-relaxed">Rendered by the backend export pipeline. Working previews reflect the current authoritative working transcript; certified exports can freeze from a locked certification snapshot.</p>
                     <p id="previewStatusLine" class="text-[10px] text-slate-500 mb-3 font-mono">Click "Refresh Preview" to render the current transcript.</p>
 
                     <div class="ms-word-page text-slate-800 border border-slate-200 p-8 h-[380px] overflow-y-auto select-none relative shadow-inner bg-white">

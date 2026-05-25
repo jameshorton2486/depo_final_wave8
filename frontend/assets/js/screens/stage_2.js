@@ -379,6 +379,7 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
             lines.push({
                 id: `job-divider-${content.job.job_id}`,
                 index: ++runningIndex,
+                jobId: null,
                 speaker: "SYSTEM INDEXER",
                 text: `======= MEDIA FILE: ${content.job.source_filename} =======`,
                 type: "text",
@@ -394,9 +395,14 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
                 index: ++runningIndex,
                 jobId: content.job.job_id,
                 speaker: nameByIndex[utt.speaker_index]
-                    || speakerNames[utt.speaker_index] || utt.speaker_label,
+                    || speakerNames[utt.speaker_index] || utt.speaker_label || `Speaker ${utt.speaker_index}`,
                 speakerIndex: utt.speaker_index,
                 text: utt.text,
+                rawText: utt.raw_text,
+                workingText: utt.working_text,
+                isWorkingOverride: !!utt.is_working_override,
+                workingSource: utt.working_source || '',
+                workingUpdatedAt: utt.working_updated_at || '',
                 // Q/A and colloquy come from the reporter-confirmed
                 // Stage 3 speaker map -- never from a raw speaker index.
                 type: qaByIndex[utt.speaker_index] || "colloquy",
@@ -411,12 +417,20 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
     if (lines.length > 0) {
         state.transcriptLines = lines;
         state.focusedLineId = lines[0].id;
+        if (state.workspaceSave) {
+            state.workspaceSave.dirty = false;
+            state.workspaceSave.pending = false;
+            state.workspaceSave.saving = false;
+            state.workspaceSave.lastError = null;
+            state.workspaceSave.lastSavedAt = new Date().toISOString();
+        }
         if (typeof compileAndRenderTranscript === "function") compileAndRenderTranscript();
+        if (typeof renderWorkspaceSaveStatus === "function") renderWorkspaceSaveStatus();
         if (typeof updateStatsBar === "function") updateStatsBar();
         // Bind the Workspace to the first job so its Stage 3 review
         // controls and AI queue know which transcript is active.
         if (typeof loadWorkspaceJobContext === "function" && jobIds.length > 0) {
-            loadWorkspaceJobContext(jobIds[0]);
+            await loadWorkspaceJobContext(jobIds[0]);
         }
     }
 }
@@ -513,6 +527,11 @@ function updateEngineModeBadge(mode) {
 }
 
 async function viewTranscriptJob(jobId) {
+    if (typeof window.workspaceHasUnsavedChanges === "function"
+            && window.workspaceHasUnsavedChanges()
+            && !window.confirm("You have unsaved transcript changes. Open another transcript and discard unsaved edits?")) {
+        return;
+    }
     showToast("Loading transcript…", "indigo");
     state.activeTranscriptJobIds = [jobId];
     await loadTranscriptResultsIntoWorkspace([jobId]);

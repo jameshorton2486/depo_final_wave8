@@ -110,7 +110,7 @@
                 await _saveCertFields();
 
                 // 2. Create and lock a certification snapshot.
-                const snapRes = await api.createSnapshot(jobId, 'CERTIFIED');
+                const snapRes = await api.createSnapshot(jobId, 'CERTIFIED', 'Certification snapshot', 'certification');
                 const snapshotId = snapRes.snapshot_id;
                 await api.lockSnapshot(snapshotId);
 
@@ -125,6 +125,7 @@
                 state.caseInfo.certified = true;
                 state.caseInfo.signature = sig;
                 state.caseInfo.packageId = packageId;
+                state.caseInfo.certifiedSnapshotId = snapshotId;
 
                 document.getElementById('badgeWorking').classList.add('hidden');
                 document.getElementById('badgeCertified').classList.remove('hidden');
