@@ -419,7 +419,7 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
 async function refreshServerTranscriptJobs() {
     if (!window.api) return;
     try {
-        const listing = await window.api.listTranscriptJobs(state.caseId || null);
+        const listing = await window.api.listTranscriptJobs(null);
         state.transcriptJobs = (listing && listing.jobs) || [];
     } catch (err) {
         console.warn("Could not load transcript jobs:", err);
