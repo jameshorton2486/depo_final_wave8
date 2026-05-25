@@ -123,3 +123,10 @@ htmlcov/
 *.tmp
 *.bak
 *.old
+
+# =========================
+# Generated Data Directories
+# =========================
+data/transcripts/
+data/audio/
+data/sqlite/
