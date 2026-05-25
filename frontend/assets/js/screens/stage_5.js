@@ -86,23 +86,78 @@
                 return;
             }
 
-            // Persist the certificate data fields before signing.
-            await _saveCertFields();
+            const jobId = state && state.jobId;
+            if (!jobId) {
+                showToast("No active job — cannot certify.", "red");
+                return;
+            }
 
-            state.caseInfo.certified = true;
-            state.caseInfo.signature = sig;
+            const btn = document.getElementById('signBtn');
+            const errorArea = document.getElementById('certErrorArea');
+            if (btn) btn.disabled = true;
+            if (errorArea) {
+                errorArea.classList.add('hidden');
+                errorArea.innerHTML = '';
+            }
 
-            document.getElementById('badgeWorking').classList.add('hidden');
-            document.getElementById('badgeCertified').classList.remove('hidden');
+            try {
+                // 1. Persist the certificate data fields before signing.
+                await _saveCertFields();
 
-            document.getElementById('renderedSignatory').innerText = sig;
-            document.getElementById('lockTimestamp').innerText = new Date().toLocaleString();
+                // 2. Create and lock a certification snapshot.
+                const snapRes = await api.createSnapshot(jobId, 'CERTIFIED');
+                const snapshotId = snapRes.snapshot_id;
+                await api.lockSnapshot(snapshotId);
 
-            document.getElementById('certPreLock').classList.add('hidden');
-            document.getElementById('certPostLock').classList.remove('hidden');
+                // 3. Assemble the DRAFT package from the locked snapshot.
+                const assembled = await api.assemblePackage(jobId, snapshotId);
+                const packageId = assembled.package_id;
 
-            addProvenanceRecord("Case Bundle Certified", `Court Reporter signature sealed under certificate key [${sig}]`, "system");
-            showToast("Deposition successfully locked and certified!", "emerald");
+                // 4. Certify the package — the one-way finalization step.
+                const certified = await api.certifyPackage(packageId);
+
+                // Success — populate UI with real API response data.
+                state.caseInfo.certified = true;
+                state.caseInfo.signature = sig;
+                state.caseInfo.packageId = packageId;
+
+                document.getElementById('badgeWorking').classList.add('hidden');
+                document.getElementById('badgeCertified').classList.remove('hidden');
+
+                document.getElementById('renderedSignatory').innerText = sig;
+                document.getElementById('lockTimestamp').innerText =
+                    certified.certified_at
+                        ? new Date(certified.certified_at).toLocaleString()
+                        : new Date().toLocaleString();
+                document.getElementById('packageIdDisplay').innerText =
+                    certified.package_id || packageId;
+                document.getElementById('manifestHashDisplay').innerText =
+                    certified.manifest_hash
+                        ? certified.manifest_hash.slice(0, 20) + '...'
+                        : '—';
+
+                document.getElementById('certPreLock').classList.add('hidden');
+                document.getElementById('certPostLock').classList.remove('hidden');
+
+                addProvenanceRecord(
+                    "Case Bundle Certified",
+                    `Package ${packageId} CERTIFIED — manifest hash ${(certified.manifest_hash || '').slice(0, 16)}`,
+                    "system"
+                );
+                showToast("Deposition successfully locked and certified!", "emerald");
+
+            } catch (err) {
+                if (btn) btn.disabled = false;
+                const detail = err.message || 'Certification failed.';
+                if (errorArea) {
+                    errorArea.classList.remove('hidden');
+                    errorArea.innerHTML =
+                        '<p class="font-semibold mb-1">Certification failed:</p>' +
+                        '<p class="text-red-300">' + detail + '</p>';
+                }
+                showToast('Certification failed: ' + detail, 'red');
+                addProvenanceRecord("Certification Failed", detail, "system");
+            }
         }
 
 

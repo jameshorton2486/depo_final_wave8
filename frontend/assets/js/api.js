@@ -361,6 +361,28 @@
             return _fetch('POST', '/transcripts/readback', body);
         },
 
+        // Snapshots (packaging workflow — Wave 18.5)
+        createSnapshot(jobId, category) {
+            return _fetch('POST', `/snapshots/jobs/${encodeURIComponent(jobId)}`,
+                          { category: category || 'CERTIFIED' });
+        },
+        lockSnapshot(snapshotId) {
+            return _fetch('POST', `/snapshots/${encodeURIComponent(snapshotId)}/lock`);
+        },
+
+        // Packages (Wave 20)
+        assemblePackage(jobId, snapshotId, metadata) {
+            return _fetch('POST', `/packages/jobs/${encodeURIComponent(jobId)}`, {
+                snapshot_id: snapshotId,
+                metadata: metadata || {},
+                freelance: true,
+            });
+        },
+        certifyPackage(packageId, metadata) {
+            return _fetch('POST', `/packages/${encodeURIComponent(packageId)}/certify`,
+                          { metadata: metadata || {} });
+        },
+
         // Health
         healthCheck() {
             return _fetch('GET', '/health');
