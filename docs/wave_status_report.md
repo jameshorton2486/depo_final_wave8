@@ -29,25 +29,23 @@ here.
 
 ## 2. The bottom line
 
-**Waves 1 through 18.5 are fully operational.** Every one is wired into
-the running app — 9 API routers are registered, the 7-screen workflow
+**Waves 1 through 21 are now operational.** Every one is wired into
+the running app — 12 API routers are registered, the 7-screen workflow
 (Intake → Transcripts → Speakers → Workspace → Insertions → Certify →
 Export) is live, and transcription, correction, speaker mapping, AI
-review, export, and snapshots all run.
+review, export, snapshots, exhibits, certification lineage, packaging,
+and offline validation all run.
 
-**Only Waves 19 and 20 are "built but not wired."** They are the active
-frontier. Their code is complete and fully tested, but the running app
-does not call it yet. That is two waves — not "numerous."
-
-Nothing is broken. The gap is integration, and it is confined to the
-two newest waves.
+The active frontier is no longer wiring. It is operational trust:
+real-data validation, workflow clarity, and narrow hardening based on
+what reporters find in actual use.
 
 ---
 
 ## 3. Master status table
 
 Verified: routers in `backend/app.py`, module references from the
-api/service layer, and the test suite (424 passed, 1 skipped).
+api/service layer, and the test suite (`504 passed, 1 skipped`).
 
 | Wave | Feature | Spec | Built | Tested | Wired | Status |
 |------|---------|:----:|:-----:|:------:|:-----:|--------|
@@ -71,16 +69,12 @@ api/service layer, and the test suite (424 passed, 1 skipped).
 | 17 | Test offline insulation | ✓ | ✓ | ✓ | n/a | **Operational** (test infrastructure) |
 | 18 | Export engine + menu (real files) | ✓ | ✓ | ✓ | ✓ | **Operational** |
 | 18.5 | Transcript snapshots & versioning | ✓ | ✓ | ✓ | ✓ | **Operational** |
-| 19 | Pagination + Geometry | ✓ | ◑² | ✓ | ✗ | **BUILT — NOT WIRED** |
-| 20 | Transcript packaging | ✓ | ✓ | ✓ | ✗ | **BUILT — NOT WIRED** |
+| 19 | Pagination + Geometry | ✓ | ✓ | ✓ | ✓ | **Operational** |
+| 20 | Transcript packaging | ✓ | ✓ | ✓ | ✓ | **Operational** |
+| 21 | MVP validation hardening | ✓ | ✓ | ✓ | ✓ | **Operational** |
 
 ¹ Wave 10 is documented as spec/notes files (`deterministic_correction_engine_spec.md`,
 `WAVE10_*_NOTES.md`), not a single `wave10.md`.
-² Wave 19A (Pagination Engine) is fully built. Wave 19B (Geometry) has
-only the measurement profile — the geometry *layer* engine is missing.
-
----
-
 ## 4. How to check this yourself — anytime
 
 You do not need to take anyone's word for it. Four checks, in a
@@ -113,34 +107,22 @@ grep -rl "backend.<module>" backend/api backend/services
 ```
 If a backend module has **no router** in `app.py` **and** is
 **referenced by zero** api/service files, it is built-but-not-wired.
-Today that is exactly three folders: `pagination`, `geometry`,
-`packaging`. Everything else is referenced and reachable.
+As of 2026-05-25, the packaging router is registered, pagination and
+geometry are used by live export flows, and the Wave 20 certification
+chain is reachable from the running app.
 
 ---
 
-## 5. What Waves 19 and 20 need to become operational
+## 5. Current Frontier
 
-Wave 19 (make pagination + geometry produce real documents):
-1. Build the Geometry Layer engine — `backend/geometry/layer.py`
-   (only the measurement profile exists today).
-2. Build a geometry-aware DOCX/PDF writer (the current writer is the
-   plain Wave 18 one).
-3. Bridge the input — route the canonical render into the Pagination
-   Engine, replacing `export_render.py`'s own naive paginator.
-4. Wire it into the export service and the Export Preview.
+Wave 21 moved the project from integration work into MVP validation:
+1. legacy transcript job re-binding for honest Stage 2 lineage
+2. certification validation for Stage 5 statutory fields
+3. explicit offline transcription mode for manual validation
+4. documentation reconciliation with the verified codebase
 
-Wave 20 (make packaging operational):
-5. API router — `backend/api/packaging.py`, registered in `app.py`.
-6. Metadata sourcing — gather case/reporter/appearance data into the
-   form the engine expects.
-7. Exhibit & examination tracking — a genuinely new subsystem (there
-   are no exhibit tables today; the Stage 4 exhibits UI is mock).
-8. Package DOCX rendering (depends on step 2).
-9. Package persistence + a Certify-screen UI action.
-
-Critical path: 1 → 2 → 3 → 4 makes Wave 19 real; step 8 depends on
-step 2. Steps 5–7 can run in parallel; step 7 is the largest piece.
-Step 5 (the Wave 20 API router) is the only item with zero blockers.
+The next work should come from `docs/audits/REAL_WORLD_VALIDATION_LOG.md`,
+not from assumptions that Waves 19–20 are still unwired.
 
 ---
 

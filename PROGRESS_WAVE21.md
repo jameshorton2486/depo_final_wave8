@@ -130,3 +130,29 @@ Trust outcome:
 
 Next build target:
 1. Subsystem 5 — reconcile status docs to the verified codebase
+
+## 2026-05-25 — Subsystem 5 Completed
+
+Status change:
+- Subsystem 5 — Documentation Reconciliation: `OPERATIONAL`
+
+Updated:
+- `README.md`
+- `docs/wave_status_report.md`
+- `docs/BLOCKERS.md`
+
+What changed:
+- removed stale "not started" claims for persistence, NOD parsing, Deepgram, AI review, and export
+- corrected the repo status from "mock frontend / thin backend" to the current wired Stage 1–6 workflow
+- corrected Wave 19 / Wave 20 from "BUILT — NOT WIRED" to operational
+- documented Wave 21 as the MVP validation hardening pass
+- carried forward the still-open `Q20-6` policy confirmation honestly
+
+Verification:
+- full suite:
+  - `504 passed, 1 skipped, 33 warnings`
+
+Next phase:
+1. Wave 21 final self-validation pass
+2. `VALIDATION_WAVE21.md`
+3. final `PROGRESS_WAVE21.md` summary
