@@ -42,11 +42,25 @@ def _valid_metadata() -> dict:
         "witness_name": "Heath Thomas",
         "reporter_name": "Miah Bardot",
         "reporter_csr_number": "TX-10423",
+        "reporter_csr_expiration": "12/31/2027",
+        "firm_registration_no": "10698",
         "proceedings_date": "May 21, 2026",
         "location": "1100 NW Loop 410, San Antonio, Texas",
+        "examination_disposition": "waived",
+        "custodial_attorney": "Ms. Elizabeth R. Flora, Esq.",
+        "officer_charges_amount": "450.00",
+        "charges_party": "Acme Corp.",
+        "certificate_service_date": "June 5, 2026",
+        "time_per_party": [
+            {"party": "Plaintiff Counsel", "duration": "1:30"},
+        ],
+        "counsel_of_record": [
+            {"name": "Mr. Nunez", "role": "Attorney for Acme Corp."},
+        ],
         "appearances": [
             {"role": "plaintiff", "attorney": "Mr. Nunez",
-             "firm": "Nunez & Associates", "party": "Acme Corp."},
+             "firm": "Nunez & Associates", "party": "Acme Corp.",
+             "sbot_no": "24098765"},
         ],
     }
 
@@ -114,12 +128,28 @@ def test_blank_required_field_is_an_error():
     assert not validate_metadata(meta).ok
 
 
-def test_missing_appearances_is_warning_not_error():
+def test_missing_appearances_is_certification_error():
     meta = _valid_metadata()
     meta["appearances"] = []
     result = validate_metadata(meta)
-    assert result.ok
-    assert result.warnings
+    assert not result.ok
+    assert any("appearances" in err for err in result.errors)
+
+
+def test_missing_time_per_party_is_certification_error():
+    meta = _valid_metadata()
+    meta["time_per_party"] = []
+    result = validate_metadata(meta)
+    assert not result.ok
+    assert any("time_per_party" in err for err in result.errors)
+
+
+def test_missing_sbot_number_is_certification_error():
+    meta = _valid_metadata()
+    meta["appearances"][0]["sbot_no"] = ""
+    result = validate_metadata(meta)
+    assert not result.ok
+    assert any("appearances[1].sbot_no" in err for err in result.errors)
 
 
 # --- index generation ------------------------------------------------
@@ -503,15 +533,9 @@ def test_packaging_certify_full_workflow(client, sample_job_with_content):
     snap_id = snap_res.json()["snapshot_id"]
     assert client.post(f"/api/snapshots/{snap_id}/lock").status_code == 200
 
-    metadata = {
-        "cause_number": "2024-CI-09912",
-        "caption": "Acme Corp. v. Dana Reed",
-        "court": "288th Judicial District Court, Bexar County, Texas",
-        "witness_name": "Dana Reed",
-        "reporter_name": "Miah Bardot",
-        "reporter_csr_number": "TX-10423",
-        "proceedings_date": "May 21, 2026",
-    }
+    metadata = _valid_metadata()
+    metadata["caption"] = "Acme Corp. v. Dana Reed"
+    metadata["witness_name"] = "Dana Reed"
 
     # 2. Assemble a DRAFT package -- real content => a non-empty body.
     assemble_res = client.post(

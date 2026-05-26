@@ -27,6 +27,24 @@ REQUIRED_METADATA_FIELDS: tuple[str, ...] = (
     "proceedings_date",
 )
 
+# BLOCKER-3 follow-on / Q20-6 boundary:
+# These are the additional certificate data-capture fields already
+# surfaced in Stage 5 and rendered by the certificate page. Certification
+# should fail cleanly when they are absent rather than producing a
+# package that still contains bracketed legal placeholders.
+REQUIRED_CERTIFICATE_FIELDS: tuple[str, ...] = (
+    "examination_disposition",
+    "custodial_attorney",
+    "officer_charges_amount",
+    "charges_party",
+    "certificate_service_date",
+    "reporter_csr_expiration",
+    "firm_registration_no",
+    "time_per_party",
+    "counsel_of_record",
+    "appearances",
+)
+
 
 @dataclass
 class ValidationResult:
@@ -75,9 +93,18 @@ def validate_metadata(metadata: dict) -> ValidationResult:
                 f"Required metadata field is missing or blank: "
                 f"'{field_name}'.")
 
-    if _is_blank(metadata.get("appearances")):
-        result.warnings.append(
-            "No appearances recorded — the Appearances page will be empty.")
+    for field_name in REQUIRED_CERTIFICATE_FIELDS:
+        if _is_blank(metadata.get(field_name)):
+            result.errors.append(
+                f"Required certification field is missing or blank: "
+                f"'{field_name}'.")
+
+    for idx, appearance in enumerate(metadata.get("appearances") or [], start=1):
+        if _is_blank((appearance or {}).get("sbot_no")):
+            result.errors.append(
+                "Required certification field is missing or blank: "
+                f"'appearances[{idx}].sbot_no'."
+            )
 
     if _is_blank(metadata.get("location")):
         result.warnings.append(
