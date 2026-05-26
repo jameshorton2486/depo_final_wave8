@@ -97,3 +97,36 @@ Open decision carried forward:
 Next build targets:
 1. Subsystem 4 — implement explicit runtime offline-provider mode with certification refusal
 2. Subsystem 5 — reconcile status docs to the verified codebase
+
+## 2026-05-25 — Subsystem 4 Completed
+
+Status change:
+- Subsystem 4 — Runtime Offline-Provider Mode: `OPERATIONAL`
+
+Implemented:
+- explicit runtime provider switch:
+  - `DEPOPRO_TRANSCRIPTION_PROVIDER=deepgram`
+  - `DEPOPRO_TRANSCRIPTION_PROVIDER=offline`
+- deterministic offline mode now works even when a real `DEEPGRAM_API_KEY` is present
+- offline-produced jobs are durably marked through their stored `transcription_source`
+- transcript job payloads now surface:
+  - `authoritative_transcript`
+- Stage 2 visibly labels offline validation transcripts as non-certifiable
+- Stage 5 lineage/status UI now warns when the active transcript is offline/non-authoritative
+- packaging assembly hard-refuses offline validation transcripts from entering the certification chain
+- operator docs added:
+  - `.env.example`
+  - `development_workflow.md`
+
+Verification:
+- focused offline/provider/certification suites: `34 passed`
+- full suite:
+  - `504 passed, 1 skipped, 33 warnings`
+
+Trust outcome:
+- manual MVP validation can now run end-to-end without a live provider key
+- offline transcripts remain usable for workflow validation
+- offline transcripts cannot be certified by accident
+
+Next build target:
+1. Subsystem 5 — reconcile status docs to the verified codebase

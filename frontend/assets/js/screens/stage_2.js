@@ -507,6 +507,7 @@ function renderServerTranscriptJobs() {
         const dur = job.duration_seconds ? `${Math.round(job.duration_seconds)}s` : "—";
         const conf = job.avg_confidence != null ? `${Math.round(job.avg_confidence * 100)}%` : "—";
         const showBind = !job.case_bound && !!currentCaseId;
+        const isOffline = job.transcription_source === 'offline-fallback' || job.authoritative_transcript === false;
 
         const card = document.createElement('div');
         card.className = "bg-slate-950 border border-slate-850 rounded-xl p-3 flex flex-col gap-2 mb-2";
@@ -520,6 +521,7 @@ function renderServerTranscriptJobs() {
                     <p class="text-[10px] ${job.case_bound ? 'text-emerald-500' : 'text-amber-400'} font-semibold uppercase tracking-wide mt-1">
                         ${job.case_bound ? `Bound to case ${job.case_id}` : 'Unbound transcript job'}
                     </p>
+                    ${isOffline ? `<p class="text-[10px] text-amber-400 font-semibold uppercase tracking-wide mt-1">Offline validation transcript — not certifiable</p>` : ''}
                 </div>
                 <span class="px-2 py-0.5 rounded text-[9px] font-semibold uppercase border ${style} shrink-0">${job.status}</span>
             </div>
@@ -571,7 +573,7 @@ function updateEngineModeBadge(mode) {
         badge.textContent = "Deepgram Nova-3 connected";
         badge.className = "text-[10px] font-semibold px-2 py-0.5 rounded border text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
     } else if (mode === "fallback") {
-        badge.textContent = "Offline fallback — set DEEPGRAM_API_KEY for live ASR";
+        badge.textContent = "Offline validation transcript source";
         badge.className = "text-[10px] font-semibold px-2 py-0.5 rounded border text-amber-400 bg-amber-500/10 border-amber-500/20";
     } else {
         badge.textContent = "Deepgram Nova-3 · batch ingestion";

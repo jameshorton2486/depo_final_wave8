@@ -210,7 +210,17 @@ def list_jobs(
 ) -> TranscriptJobList:
     rows = trepo.list_jobs(case_id=case_id)
     return TranscriptJobList(
-        jobs=[TranscriptJob(**{**r, "case_bound": bool(r.get("case_id"))}) for r in rows],
+        jobs=[
+            TranscriptJob(
+                **{
+                    **r,
+                    "case_bound": bool(r.get("case_id")),
+                    "authoritative_transcript": r.get("transcription_source")
+                    != "offline-fallback",
+                }
+            )
+            for r in rows
+        ],
         count=len(rows),
     )
 
@@ -223,7 +233,14 @@ def get_job(job_id: str) -> TranscriptJob:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Transcript job {job_id} not found",
         )
-    return TranscriptJob(**{**row, "case_bound": bool(row.get("case_id"))})
+    return TranscriptJob(
+        **{
+            **row,
+            "case_bound": bool(row.get("case_id")),
+            "authoritative_transcript": row.get("transcription_source")
+            != "offline-fallback",
+        }
+    )
 
 
 @router.put("/jobs/{job_id}", response_model=TranscriptJob)
@@ -279,7 +296,14 @@ def update_job(job_id: str, payload: TranscriptJobUpdateRequest) -> TranscriptJo
             },
         )
 
-    return TranscriptJob(**{**updated, "case_bound": bool(updated.get("case_id"))})
+    return TranscriptJob(
+        **{
+            **updated,
+            "case_bound": bool(updated.get("case_id")),
+            "authoritative_transcript": updated.get("transcription_source")
+            != "offline-fallback",
+        }
+    )
 
 
 @router.get("/jobs/{job_id}/content", response_model=TranscriptContent)

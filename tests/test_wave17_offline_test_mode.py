@@ -35,3 +35,14 @@ def test_key_is_removed_again_after_optin():
     # The previous test's monkeypatch was undone; the autouse fixture
     # leaves this test clean again.
     assert ai_client.is_available() is False
+
+
+def test_runtime_provider_switch_forces_offline(monkeypatch, tmp_path):
+    audio = tmp_path / "provider_switch.mp3"
+    audio.write_bytes(b"fake-media-bytes-for-offline-fallback" * 20)
+
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "real-key-would-normally-trigger-network")
+    monkeypatch.setenv("DEPOPRO_TRANSCRIPTION_PROVIDER", "offline")
+
+    result = dg_client.transcribe_file(audio)
+    assert result["source"] == "offline-fallback"

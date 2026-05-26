@@ -23,6 +23,7 @@ class TranscriptJob(BaseModel):
     case_id: Optional[str] = None
     session_id: Optional[str] = None
     case_bound: bool = False
+    authoritative_transcript: bool = True
     source_filename: str
     source_size_bytes: int
     media_kind: str

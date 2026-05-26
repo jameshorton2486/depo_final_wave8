@@ -19,6 +19,7 @@
             if (!state.certificationHistory) {
                 state.certificationHistory = {
                     jobId: null,
+                    job: null,
                     packages: [],
                     snapshots: [],
                     lastLoadedAt: null,
@@ -54,6 +55,7 @@
             const snapshots = [...(hist.snapshots || [])];
             const certifiedPackages = packages.filter(p => p.package_state === 'CERTIFIED');
             const lockedSnapshots = snapshots.filter(s => s.locked);
+            const job = hist.job || null;
 
             packageCount.innerText = String(certifiedPackages.length);
             snapshotCount.innerText = String(lockedSnapshots.length);
@@ -68,7 +70,11 @@
             }
             if (!packages.length && !snapshots.length) {
                 list.innerHTML = `<div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs text-slate-500 italic">No certified lineage yet. The working transcript is still the only authoritative editable layer.</div>`;
-                _setCertLineageStatus('Working transcript only.', 'warning');
+                if (job && job.authoritative_transcript === false) {
+                    _setCertLineageStatus('Offline validation transcript loaded — certification disabled.', 'warning');
+                } else {
+                    _setCertLineageStatus('Working transcript only.', 'warning');
+                }
                 return;
             }
 
@@ -145,16 +151,19 @@
             const jobId = _activeJobId();
             const hist = _certHistoryState();
             hist.jobId = jobId || null;
+            hist.job = null;
             hist.packages = [];
             hist.snapshots = [];
             renderCertificationHistory();
             if (!jobId || !window.api) return;
             _setCertLineageStatus('Loading certification lineage…', 'loading');
             try {
-                const [packagesRes, snapshotsRes] = await Promise.all([
+                const [jobRes, packagesRes, snapshotsRes] = await Promise.all([
+                    window.api.getTranscriptJob(jobId),
                     window.api.listPackages(jobId),
                     window.api.listSnapshots(jobId),
                 ]);
+                hist.job = jobRes || null;
                 hist.packages = (packagesRes && packagesRes.packages) || [];
                 hist.snapshots = (snapshotsRes && snapshotsRes.snapshots) || [];
                 hist.lastLoadedAt = new Date().toISOString();
