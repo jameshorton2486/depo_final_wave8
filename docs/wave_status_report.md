@@ -45,7 +45,7 @@ what reporters find in actual use.
 ## 3. Master status table
 
 Verified: routers in `backend/app.py`, module references from the
-api/service layer, and the test suite (`504 passed, 1 skipped`).
+api/service layer, and the test suite (the full suite green (run `python -m pytest tests -q` for the current count)).
 
 | Wave | Feature | Spec | Built | Tested | Wired | Status |
 |------|---------|:----:|:-----:|:------:|:-----:|--------|

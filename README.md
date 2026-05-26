@@ -103,7 +103,7 @@ depo_final_wave8/
 │   ├── assets/{css,js}/
 │   └── screens/          # stage_1_intake.html … stage_6_export.html
 ├── data/                 # runtime files (sqlite, cases, exports, audio, …)
-├── docs/                 # ufm_schema_v1.md, nod_parser_spec.md, architecture.md
+├── docs/                 # ufm_schema_v1.md, nod_parser_spec.md, archive/completed_phases/architecture.md (historical — superseded; see CLAUDE.md)
 ├── scripts/              # *.bat maintenance helpers (Windows)
 ├── tests/                # backend + workflow integration tests
 ├── main.py               # python main.py == python desktop/launcher.py
@@ -139,5 +139,5 @@ scripts\full_maintenance.bat     # all of the above
 2. Workflow trust verification across Stage 1–6 with real data.
 3. Narrow stabilization fixes discovered during validation, not broad architecture rewrites.
 
-See `docs/architecture.md` for the four-layer model and
+See `CLAUDE.md` for current documentation authority and
 `docs/ufm_schema_v1.md` for the canonical data contract.
