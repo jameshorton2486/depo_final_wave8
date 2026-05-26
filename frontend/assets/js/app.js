@@ -93,6 +93,13 @@
                 selectedSnapshotId: null,
                 lastLoadedAt: null,
             };
+            state.certificationHistory = {
+                jobId: null,
+                packages: [],
+                snapshots: [],
+                lastLoadedAt: null,
+                lastError: null,
+            };
             state.workspaceSave = {
                 dirty: false,
                 pending: false,
@@ -102,6 +109,13 @@
                 timer: null,
             };
             state.transcriptLines = [];
+            state.exhibits = [];
+            state.exhibitsMeta = {
+                jobId: null,
+                lastLoadedAt: null,
+                lastSavedAt: null,
+                lastError: null,
+            };
             state.focusedLineId = null;
             const rawNotesField = document.getElementById('rawIntakeNotes');
             if (rawNotesField) rawNotesField.value = '';
@@ -307,10 +321,6 @@
 
 
         async function goToStage(stageNum) {
-            if (state.caseInfo.certified && stageNum < 5) {
-                showToast("This transcript is CERTIFIED and LOCKED. Request unlock to edit.", "red");
-                return;
-            }
             if (state.currentStage === 3 && stageNum !== 3 && !confirmDiscardWorkspaceChanges(
                 "You have unsaved transcript changes. Leave Stage 3 and discard any edits that have not been saved yet?"
             )) {
@@ -492,16 +502,10 @@
                     loadWorkspaceSnapshots && loadWorkspaceSnapshots();
                 } else if (stageNum === 4) {
                     renderExhibitsIndex && renderExhibitsIndex();
+                    loadWorkspaceExhibits && loadWorkspaceExhibits();
                 } else if (stageNum === 5) {
-                    // If already certified, show the sealed card instead of the sign form
-                    if (state.caseInfo.certified) {
-                        const pre = document.getElementById('certPreLock');
-                        const post = document.getElementById('certPostLock');
-                        const sigOut = document.getElementById('renderedSignatory');
-                        if (pre) pre.classList.add('hidden');
-                        if (post) post.classList.remove('hidden');
-                        if (sigOut && state.caseInfo.signature) sigOut.innerText = state.caseInfo.signature;
-                    }
+                    loadCertFields && loadCertFields();
+                    loadCertificationHistory && loadCertificationHistory();
                 }
             } catch (err) {
                 console.warn(`Render error for stage ${stageNum}:`, err);

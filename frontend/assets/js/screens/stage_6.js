@@ -85,8 +85,12 @@ async function refreshExportPreview() {
                 : `Authoritative preview — ${_exportDoc.total_pages} page(s), ${_exportDoc.total_lines} line(s), rendered ${when}`;
         }
         if (authorityBanner) {
+            const sourceSel = document.getElementById('exportSourceSelect');
+            const requestedSource = sourceSel ? sourceSel.value : 'working';
             authorityBanner.innerText = certifiedSnapshotId
-                ? "Certified snapshot available: manual exports can freeze from the locked certification snapshot. Preview remains the current working transcript unless certification packaging is used."
+                ? requestedSource === 'certified'
+                    ? "Certified export selected: the downloaded file will be rendered from the latest locked certification snapshot. Preview remains the current working transcript for comparison."
+                    : "Working export selected: the downloaded file will come from the current authoritative working transcript. Prior certified snapshots remain available as separate immutable versions."
                 : "Working export mode: renders the current authoritative working transcript. Certified snapshot export becomes available after Stage 5 certification.";
         }
         if (typeof showToast === "function") {
@@ -162,8 +166,10 @@ function renderExportPreview(doc) {
 async function triggerExportAction() {
     const formatSelect = document.getElementById('exportFormatSelect');
     const destSelect = document.getElementById('exportDestinationSelect');
+    const sourceSelect = document.getElementById('exportSourceSelect');
     const format = formatSelect ? formatSelect.value : 'txt';
     const destination = destSelect ? destSelect.value : 'downloads';
+    const exportSource = sourceSelect ? sourceSelect.value : 'working';
 
     const jobId = _activeJobId();
     if (!jobId) {
@@ -197,7 +203,13 @@ async function triggerExportAction() {
     const btn = document.getElementById('exportActionBtn');
     if (btn) { btn.disabled = true; }
     try {
-        const snapshotId = await _resolveCertifiedSnapshotId(jobId);
+        let snapshotId = null;
+        if (exportSource === 'certified') {
+            snapshotId = await _resolveCertifiedSnapshotId(jobId);
+            if (!snapshotId) {
+                throw new Error('No locked certification snapshot is available for certified export.');
+            }
+        }
         const res = await window.api.exportTranscript(
             jobId,
             format,
@@ -242,6 +254,12 @@ window.triggerExportAction = triggerExportAction;
 // always sees the current transcript state without an extra click.
 window.addEventListener("screen:loaded", (e) => {
     if (e.detail && e.detail.stageNum === 6) {
+        refreshExportPreview();
+    }
+});
+
+document.addEventListener('change', (event) => {
+    if (event.target && event.target.id === 'exportSourceSelect') {
         refreshExportPreview();
     }
 });

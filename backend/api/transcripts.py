@@ -43,6 +43,7 @@ from backend.models.transcripts import (
     SpeakerMappingSaveRequest,
     SpeakerMappingView,
     TranscriptContent,
+    TranscriptExhibit,
     TranscriptJob,
     TranscriptJobList,
     TranscriptParticipant,
@@ -257,6 +258,9 @@ def get_job_content(job_id: str) -> TranscriptContent:
         words=[TranscriptWord(**w) for w in trepo.get_words(job_id)],
         participants=[
             TranscriptParticipant(**p) for p in trepo.get_participants(job_id)
+        ],
+        exhibits=[
+            TranscriptExhibit(**e) for e in trepo.list_exhibits(job_id)
         ],
     )
 

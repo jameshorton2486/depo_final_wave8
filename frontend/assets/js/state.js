@@ -59,6 +59,12 @@
             // Populated from real ingested transcripts (Stage 2 -> Stage 3).
             transcriptLines: [],
             exhibits: [],
+            exhibitsMeta: {
+                jobId: null,
+                lastLoadedAt: null,
+                lastSavedAt: null,
+                lastError: null,
+            },
             correctionsMemory: [],
             provenance: [],
             activePlayback: false,
@@ -96,6 +102,13 @@
                 items: [],
                 selectedSnapshotId: null,
                 lastLoadedAt: null,
+            },
+            certificationHistory: {
+                jobId: null,
+                packages: [],
+                snapshots: [],
+                lastLoadedAt: null,
+                lastError: null,
             },
             workspaceSave: {
                 dirty: false,

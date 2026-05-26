@@ -281,7 +281,106 @@ def test_transcript_provenance_persists_and_lists(client, sample_job_with_conten
     assert any(ev["event_id"] == event["event_id"] for ev in body["events"])
 
 
+def test_exhibit_create_reload_and_delete(client, sample_job_with_content):
+    job_id = sample_job_with_content
+    created = client.post(
+        f"/api/exhibits/jobs/{job_id}",
+        json={
+            "exhibit_number": "1",
+            "exhibit_title": "Photograph",
+            "offering_attorney": "Mr. Vance",
+            "anchor_utterance_id": "utt-2",
+            "anchor_note": "And where do you currently reside?",
+        },
+    )
+    assert created.status_code == 201
+    exhibit = created.json()
+    assert exhibit["job_id"] == job_id
+    assert exhibit["anchor_utterance_id"] == "utt-2"
+
+    listed = client.get(f"/api/exhibits/jobs/{job_id}")
+    assert listed.status_code == 200
+    assert listed.json()["count"] == 1
+    assert listed.json()["exhibits"][0]["exhibit_title"] == "Photograph"
+
+    content = client.get(f"/api/transcripts/jobs/{job_id}/content")
+    assert content.status_code == 200
+    assert content.json()["exhibits"][0]["anchor_utterance_id"] == "utt-2"
+
+    updated = client.put(
+        f"/api/exhibits/{exhibit['exhibit_id']}",
+        json={
+            "exhibit_title": "Updated Photograph",
+            "anchor_utterance_id": "utt-3",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["exhibit_title"] == "Updated Photograph"
+    assert updated.json()["anchor_utterance_id"] == "utt-3"
+
+    deleted = client.delete(f"/api/exhibits/{exhibit['exhibit_id']}")
+    assert deleted.status_code == 204
+    relisted = client.get(f"/api/exhibits/jobs/{job_id}")
+    assert relisted.json()["count"] == 0
+
+
+def test_exhibit_mutation_allowed_after_locked_snapshot_for_new_lineage(client, sample_job_with_content):
+    job_id = sample_job_with_content
+    snap = client.post(
+        f"/api/snapshots/jobs/{job_id}",
+        json={"category": "CERTIFIED"},
+    ).json()
+    assert client.post(f"/api/snapshots/{snap['snapshot_id']}/lock").status_code == 200
+
+    created = client.post(
+        f"/api/exhibits/jobs/{job_id}",
+        json={
+            "exhibit_number": "1",
+            "exhibit_title": "Photograph",
+            "anchor_utterance_id": "utt-1",
+        },
+    )
+    assert created.status_code == 201
+
+    transcript_saved = client.put(
+        f"/api/transcripts/jobs/{job_id}/working-transcript",
+        json={
+            "utterances": [
+                {"utterance_id": "utt-1", "working_text": "Working transcript continues after certification."}
+            ]
+        },
+    )
+    assert transcript_saved.status_code == 200
+
+
+def test_exhibit_anchor_survives_transcript_edits(client, sample_job_with_content):
+    job_id = sample_job_with_content
+    created = client.post(
+        f"/api/exhibits/jobs/{job_id}",
+        json={
+            "exhibit_number": "2",
+            "exhibit_title": "Contract",
+            "anchor_utterance_id": "utt-3",
+        },
+    ).json()
+
+    updated = client.put(
+        f"/api/transcripts/jobs/{job_id}/working-transcript",
+        json={
+            "utterances": [
+                {"utterance_id": "utt-3", "working_text": "And where are you currently employed?"}
+            ],
+            "source": "test_suite",
+        },
+    )
+    assert updated.status_code == 200
+    listed = client.get(f"/api/exhibits/jobs/{job_id}").json()
+    assert listed["exhibits"][0]["anchor_utterance_id"] == created["anchor_utterance_id"]
+
+
 def test_export_from_locked_snapshot_returns_certified_source(client, sample_job_with_content, tmp_path):
+    from backend.transcript import working_state
+
     job_id = sample_job_with_content
     client.put(
         f"/api/transcripts/jobs/{job_id}/working-transcript",
@@ -301,18 +400,22 @@ def test_export_from_locked_snapshot_returns_certified_source(client, sample_job
     ).json()
     assert client.post(f"/api/snapshots/{snap['snapshot_id']}/lock").status_code == 200
 
-    # Mutate live working state after the lock.
-    client.put(
+    # Later working-state changes are allowed, but certified export must still
+    # freeze to the locked snapshot lineage.
+    follow_up = client.put(
         f"/api/transcripts/jobs/{job_id}/working-transcript",
         json={
             "utterances": [
-                {
-                    "utterance_id": "utt-1",
-                    "working_text": "Live working transcript after certification lock.",
-                }
+                {"utterance_id": "utt-1", "working_text": "Live working transcript after certification lock."}
             ],
             "source": "test_suite",
         },
+    )
+    assert follow_up.status_code == 200
+    working_state.persist_working_transcript(
+        job_id,
+        [{"utterance_id": "utt-1", "working_text": "Live working transcript after certification lock."}],
+        source="test_suite",
     )
     exported = client.post(
         f"/api/transcripts/jobs/{job_id}/export",

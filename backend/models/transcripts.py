@@ -111,6 +111,22 @@ class TranscriptParticipant(BaseModel):
     honorific: Optional[str] = None     # MR | MS | MRS | DR | None
 
 
+class TranscriptExhibit(BaseModel):
+    exhibit_id: str
+    job_id: str
+    case_id: Optional[str] = None
+    session_id: Optional[str] = None
+    exhibit_number: str
+    exhibit_title: str = ""
+    offering_attorney: str = ""
+    description: str = ""
+    anchor_utterance_id: str
+    anchor_note: str = ""
+    sort_order: int = 0
+    created_at: str
+    updated_at: str
+
+
 class TranscriptContent(BaseModel):
     """The full canonical content for a job: speakers + utterances + words.
 
@@ -123,6 +139,7 @@ class TranscriptContent(BaseModel):
     utterances: list[TranscriptUtterance]
     words: list[TranscriptWord]
     participants: list[TranscriptParticipant] = []
+    exhibits: list[TranscriptExhibit] = []
 
 
 # --------------------------------------------------------------------
@@ -197,6 +214,32 @@ class WorkingTranscriptSaveResponse(BaseModel):
     removed: int
     override_count: int
     working_packet_path: Optional[str] = None
+
+
+class TranscriptExhibitCreateRequest(BaseModel):
+    exhibit_number: str
+    exhibit_title: str = ""
+    offering_attorney: str = ""
+    description: str = ""
+    anchor_utterance_id: str
+    anchor_note: str = ""
+    sort_order: Optional[int] = None
+
+
+class TranscriptExhibitUpdateRequest(BaseModel):
+    exhibit_number: Optional[str] = None
+    exhibit_title: Optional[str] = None
+    offering_attorney: Optional[str] = None
+    description: Optional[str] = None
+    anchor_utterance_id: Optional[str] = None
+    anchor_note: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class TranscriptExhibitListResponse(BaseModel):
+    job_id: str
+    exhibits: list[TranscriptExhibit]
+    count: int
 
 
 class TranscriptProvenanceEvent(BaseModel):

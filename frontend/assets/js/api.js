@@ -337,6 +337,18 @@
         getTranscriptContent(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/content`);
         },
+        listTranscriptExhibits(jobId) {
+            return _fetch('GET', `/exhibits/jobs/${encodeURIComponent(jobId)}`);
+        },
+        createTranscriptExhibit(jobId, payload) {
+            return _fetch('POST', `/exhibits/jobs/${encodeURIComponent(jobId)}`, payload || {});
+        },
+        updateTranscriptExhibit(exhibitId, payload) {
+            return _fetch('PUT', `/exhibits/${encodeURIComponent(exhibitId)}`, payload || {});
+        },
+        deleteTranscriptExhibit(exhibitId) {
+            return _fetch('DELETE', `/exhibits/${encodeURIComponent(exhibitId)}`);
+        },
         saveWorkingTranscript(jobId, utterances, source) {
             return _fetch('PUT', `/transcripts/jobs/${encodeURIComponent(jobId)}/working-transcript`, {
                 utterances: utterances || [],
@@ -449,6 +461,12 @@
                 metadata: metadata || {},
                 freelance: true,
             });
+        },
+        listPackages(jobId) {
+            return _fetch('GET', `/packages/jobs/${encodeURIComponent(jobId)}`);
+        },
+        getPackage(packageId) {
+            return _fetch('GET', `/packages/${encodeURIComponent(packageId)}`);
         },
         certifyPackage(packageId, metadata) {
             return _fetch('POST', `/packages/${encodeURIComponent(packageId)}/certify`,

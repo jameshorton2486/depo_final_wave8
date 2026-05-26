@@ -64,6 +64,29 @@ def _capture_state(job_id: str) -> dict:
         state["render_lines"] = []
 
     try:
+        state["exhibits"] = [
+            {
+                "exhibit_id": ex.get("exhibit_id"),
+                "job_id": ex.get("job_id"),
+                "case_id": ex.get("case_id"),
+                "session_id": ex.get("session_id"),
+                "exhibit_number": ex.get("exhibit_number"),
+                "exhibit_title": ex.get("exhibit_title") or "",
+                "offering_attorney": ex.get("offering_attorney") or "",
+                "description": ex.get("description") or "",
+                "anchor_utterance_id": ex.get("anchor_utterance_id"),
+                "anchor_note": ex.get("anchor_note") or "",
+                "sort_order": ex.get("sort_order", 0),
+                "created_at": ex.get("created_at") or "",
+                "updated_at": ex.get("updated_at") or "",
+            }
+            for ex in trepo.list_exhibits(job_id)
+        ]
+    except Exception as exc:
+        logger.warning(f"snapshot: exhibit capture failed: {exc}")
+        state["exhibits"] = []
+
+    try:
         participants = trepo.get_participants(job_id)
         state["speaker_mapping"] = [
             {"participant_id": p.get("participant_id"),
@@ -299,6 +322,15 @@ def rollback_to(job_id: str, snapshot_id: str,
         except Exception as exc:
             logger.warning(f"rollback: participant restore failed: {exc}")
 
+    exhibits = target.state.get("exhibits") or []
+    try:
+        trepo.replace_exhibits(job_id, exhibits)
+        logger.info(
+            f"snapshot rollback restored exhibits for {job_id}: {len(exhibits)} exhibit(s)"
+        )
+    except Exception as exc:
+        logger.warning(f"rollback: exhibit restore failed: {exc}")
+
     # Record a NEW snapshot documenting the rollback (history preserved).
     new_snap = create_snapshot(
         job_id, category="MANUAL",
@@ -309,12 +341,16 @@ def rollback_to(job_id: str, snapshot_id: str,
             job_id,
             event_type="snapshot_restored",
             title="Snapshot Restored",
-            detail=f"Restored working transcript and speaker mapping from snapshot {snapshot_id}.",
+            detail=(
+                f"Restored working transcript, speaker mapping, and exhibits "
+                f"from snapshot {snapshot_id}."
+            ),
             actor_type="system",
             source="snapshots",
             metadata={
                 "restored_from_snapshot_id": snapshot_id,
                 "created_snapshot_id": new_snap.snapshot_id,
+                "restored_exhibit_count": len(exhibits),
             },
             related_snapshot_id=snapshot_id,
         )

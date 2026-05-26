@@ -316,7 +316,7 @@
                         ${line.exhibit ? `<span class="text-[8px] px-1 bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 rounded">EXHIBIT ${line.exhibit} MARKED</span>` : ''}
                         ${line.startTime != null && !isSystemRow ? `<span class="text-[8px] text-slate-600 font-mono">@ ${Number(line.startTime || 0).toFixed(1)}s</span>` : ''}
                     </div>
-                    <div class="transcript-line outline-none focus:bg-indigo-500/5 focus:rounded p-0.5 whitespace-pre-wrap ${isSystemRow ? 'italic text-slate-500' : ''}" contenteditable="${(!state.caseInfo.certified && !isSystemRow) ? 'true' : 'false'}" spellcheck="false" onblur="handleTextEdit('${line.id}', this.innerHTML)">
+                    <div class="transcript-line outline-none focus:bg-indigo-500/5 focus:rounded p-0.5 whitespace-pre-wrap ${isSystemRow ? 'italic text-slate-500' : ''}" contenteditable="${!isSystemRow ? 'true' : 'false'}" spellcheck="false" onblur="handleTextEdit('${line.id}', this.innerHTML)">
                         ${prefixHtml}${textContentHtml}
                     </div>
                 `;
@@ -1106,6 +1106,9 @@
         async function loadWorkspaceJobContext(jobId) {
             const wj = _workspaceJob();
             wj.jobId = jobId;
+            if (typeof loadWorkspaceExhibits === "function") {
+                await loadWorkspaceExhibits(jobId);
+            }
             if (typeof loadWorkspaceSpeakerMapping === "function") {
                 await loadWorkspaceSpeakerMapping();
             }

@@ -20,6 +20,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from backend.packaging import (
+    ExhibitEvent,
     IndexInputs,
     assemble_package,
     certify_package,
@@ -360,8 +361,8 @@ class CertifyRequest(BaseModel):
 # Helper: build a paginated document for a job
 # ---------------------------------------------------------------------------
 
-def _build_paginated_from_snapshot_state(snapshot_state: dict):
-    """Return a PaginatedDocument from a locked snapshot's working state.
+def _build_paginated_and_index_inputs_from_snapshot_state(snapshot_state: dict):
+    """Return frozen pagination + index inputs from locked snapshot state.
 
     Certification and packaging must freeze from the snapshot state, not
     from the current mutable live database rows.
@@ -429,6 +430,11 @@ def _build_paginated_from_snapshot_state(snapshot_state: dict):
 
     # Stage S structural render
     stage_s = render_stage_s(utterances, participants)
+    utterance_to_render_line: dict[str, str] = {}
+    for ln in stage_s.lines:
+        for utt_id in ln.source_utterance_ids or []:
+            if utt_id and utt_id not in utterance_to_render_line:
+                utterance_to_render_line[utt_id] = ln.line_id
 
     # Map to working line dicts (same mapping as export-preview)
     working: list[dict] = []
@@ -450,7 +456,18 @@ def _build_paginated_from_snapshot_state(snapshot_state: dict):
         })
 
     _, paginated = render_export_with_layout(working)
-    return paginated
+
+    exhibit_events = []
+    for ex in snapshot_state.get("exhibits") or []:
+        render_line_id = utterance_to_render_line.get(ex.get("anchor_utterance_id") or "")
+        exhibit_events.append(
+            ExhibitEvent(
+                exhibit_number=str(ex.get("exhibit_number") or ""),
+                exhibit_title=str(ex.get("exhibit_title") or ""),
+                render_line_id=render_line_id or "",
+            )
+        )
+    return paginated, IndexInputs(exhibit_events=exhibit_events)
 
 
 # ---------------------------------------------------------------------------
@@ -489,14 +506,17 @@ def assemble(job_id: str, payload: AssembleRequest) -> dict:
 
     # Build the paginated body from the LOCKED snapshot state.
     try:
-        paginated = _build_paginated_from_snapshot_state(snap.state or {})
+        paginated, index_inputs = _build_paginated_and_index_inputs_from_snapshot_state(
+            snap.state or {}
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to paginate transcript for packaging: {exc}")
     logger.info(
         f"Packaging assemble for {job_id} frozen to snapshot {snap.snapshot_id} "
-        f"(locked={snap.locked}, hash={snap.state_hash[:12]})"
+        f"(locked={snap.locked}, hash={snap.state_hash[:12]}, "
+        f"exhibits={len(index_inputs.exhibit_events)})"
     )
 
     # Auto-populate metadata from DB; explicit payload fields win.
@@ -507,13 +527,34 @@ def assemble(job_id: str, payload: AssembleRequest) -> dict:
         snapshot_id=snap.snapshot_id,
         state_hash=snap.state_hash,
         metadata=metadata,
-        index_inputs=IndexInputs(),  # empty by default; caller may extend
+        index_inputs=index_inputs,
         paginated_document=paginated,
         freelance=payload.freelance,
     )
 
     # Persist and return.
     summary = save_package(package, job_id)
+    try:
+        provenance_mod.record_event(
+            job_id,
+            event_type="package_assembled",
+            title="Certified Package Draft Assembled",
+            detail=(
+                f"Draft package {summary.get('package_id') or package.package_id} "
+                f"assembled from locked snapshot {snap.snapshot_id}."
+            ),
+            actor_type="system",
+            source="packaging",
+            metadata={
+                "snapshot_id": snap.snapshot_id,
+                "state_hash": snap.state_hash,
+                "included_exhibits": package.manifest.included_exhibits or [],
+            },
+            related_snapshot_id=snap.snapshot_id,
+            related_package_id=summary.get("package_id") or package.package_id,
+        )
+    except Exception as exc:
+        logger.warning(f"package assemble provenance record failed: {exc}")
     return {
         **summary,
         "generation_report": package.generation_report.to_dict(),
@@ -584,6 +625,11 @@ def certify(package_id: str, payload: CertifyRequest) -> dict:
     update_package_state(package_id, "CERTIFIED", certified)
 
     result = get_package(package_id) or {}
+    prior_certified = [
+        pkg for pkg in list_packages(job_id)
+        if pkg["package_state"] == "CERTIFIED" and pkg["package_id"] != package_id
+    ]
+
     try:
         provenance_mod.record_event(
             job_id,
@@ -595,10 +641,32 @@ def certify(package_id: str, payload: CertifyRequest) -> dict:
             metadata={
                 "snapshot_id": result.get("snapshot_id") or summary.get("snapshot_id"),
                 "manifest_hash": result.get("manifest_hash") or "",
+                "included_exhibits": (
+                    ((result.get("package") or {}).get("manifest") or {}).get("included_exhibits") or []
+                ),
+                "prior_certified_package_ids": [pkg["package_id"] for pkg in prior_certified],
             },
             related_snapshot_id=result.get("snapshot_id") or summary.get("snapshot_id") or "",
             related_package_id=package_id,
         )
+        if prior_certified:
+            provenance_mod.record_event(
+                job_id,
+                event_type="recertification_created",
+                title="Recertification Created",
+                detail=(
+                    f"Certified new package {package_id} while preserving "
+                    f"{len(prior_certified)} prior certified package(s)."
+                ),
+                actor_type="system",
+                source="packaging",
+                metadata={
+                    "new_package_id": package_id,
+                    "prior_certified_package_ids": [pkg["package_id"] for pkg in prior_certified],
+                },
+                related_snapshot_id=result.get("snapshot_id") or summary.get("snapshot_id") or "",
+                related_package_id=package_id,
+            )
     except Exception as exc:
         logger.warning(f"certification provenance record failed: {exc}")
     logger.info(

@@ -172,6 +172,31 @@ def test_snapshot_rollback_restores_working_transcript(sample_job_with_content):
     assert any(ev["event_type"] == "snapshot_restored" for ev in provenance)
 
 
+def test_snapshot_rollback_restores_exhibits(sample_job_with_content):
+    from backend.transcript import repository as trepo
+    from backend.transcript_state import snapshot_service
+
+    trepo.create_exhibit(sample_job_with_content, {
+        "exhibit_number": "1",
+        "exhibit_title": "Photograph",
+        "anchor_utterance_id": "utt-2",
+        "anchor_note": "Where do you currently reside?",
+    })
+    snap = snapshot_service.create_snapshot(sample_job_with_content, category="MANUAL")
+
+    exhibit = trepo.list_exhibits(sample_job_with_content)[0]
+    trepo.update_exhibit(exhibit["exhibit_id"], {
+        "exhibit_title": "Changed After Snapshot",
+        "anchor_utterance_id": "utt-5",
+    })
+
+    snapshot_service.rollback_to(sample_job_with_content, snap.snapshot_id)
+    restored = trepo.list_exhibits(sample_job_with_content)
+    assert len(restored) == 1
+    assert restored[0]["exhibit_title"] == "Photograph"
+    assert restored[0]["anchor_utterance_id"] == "utt-2"
+
+
 # --- endpoints -------------------------------------------------------
 
 def test_create_snapshot_unknown_job_404(client):

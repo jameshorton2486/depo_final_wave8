@@ -30,10 +30,17 @@
                             </select>
                         </div>
                         <div>
+                            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Export Authority Source</label>
+                            <select id="exportSourceSelect" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                                <option value="working" selected>Current Working Transcript (Editable)</option>
+                                <option value="certified">Latest Locked Certification Snapshot (Frozen)</option>
+                            </select>
+                        </div>
+                        <div>
                             <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5 font-mono">Custom Watermark text</label>
                             <input type="text" value="CERTIFIED ORIGINAL TRANSCRIPT" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-sans">
                         </div>
-                        <div>
+                        <div class="md:col-span-2">
                             <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5 font-sans">Exhibit Index Append</label>
                             <div class="flex items-center gap-3 h-9">
                                 <label class="flex items-center gap-2 cursor-pointer text-sm text-slate-300">
@@ -68,7 +75,7 @@
                             ⟳ Refresh Preview
                         </button>
                     </div>
-                    <p class="text-xs text-slate-400 mb-2 leading-relaxed">Rendered by the backend export pipeline. Working previews reflect the current authoritative working transcript; certified exports can freeze from a locked certification snapshot.</p>
+                    <p class="text-xs text-slate-400 mb-2 leading-relaxed">Rendered by the backend export pipeline. Preview always shows the current working transcript. Export source selection below determines whether the file is emitted from live working state or a frozen certified snapshot.</p>
                     <p id="previewStatusLine" class="text-[10px] text-slate-500 mb-3 font-mono">Click "Refresh Preview" to render the current transcript.</p>
 
                     <div class="ms-word-page text-slate-800 border border-slate-200 p-8 h-[380px] overflow-y-auto select-none relative shadow-inner bg-white">

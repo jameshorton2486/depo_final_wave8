@@ -542,7 +542,7 @@ def test_packaging_certify_full_workflow(client, sample_job_with_content):
 
 
 def test_packaging_uses_locked_snapshot_state_not_live_db(client, sample_job_with_content):
-    from backend.api.packaging import _build_paginated_from_snapshot_state
+    from backend.api.packaging import _build_paginated_and_index_inputs_from_snapshot_state
     from backend.transcript import working_state
     from backend.transcript_state import snapshot_repo
 
@@ -566,7 +566,7 @@ def test_packaging_uses_locked_snapshot_state_not_live_db(client, sample_job_wit
     )
 
     snap = snapshot_repo.get_snapshot(snap_id)
-    paginated = _build_paginated_from_snapshot_state(snap.state)
+    paginated, _ = _build_paginated_and_index_inputs_from_snapshot_state(snap.state)
     body_text = "\n".join(
         slot.physical_line.text
         for page in paginated.pages
@@ -575,3 +575,68 @@ def test_packaging_uses_locked_snapshot_state_not_live_db(client, sample_job_wit
     )
     assert "Snapshot-owned witness answer." in body_text
     assert "Live database text after lock." not in body_text
+
+
+def test_packaging_uses_snapshot_exhibit_events_not_live_db(client, sample_job_with_content):
+    from backend.api.packaging import _build_paginated_and_index_inputs_from_snapshot_state
+    from backend.transcript import repository as trepo
+    from backend.transcript_state import snapshot_repo
+
+    job_id = sample_job_with_content
+    trepo.create_exhibit(job_id, {
+        "exhibit_number": "1",
+        "exhibit_title": "Photograph",
+        "anchor_utterance_id": "utt-2",
+    })
+
+    snap_res = client.post(f"/api/snapshots/jobs/{job_id}", json={"category": "CERTIFIED"})
+    snap_id = snap_res.json()["snapshot_id"]
+    assert client.post(f"/api/snapshots/{snap_id}/lock").status_code == 200
+
+    exhibit = trepo.list_exhibits(job_id)[0]
+    trepo.update_exhibit(exhibit["exhibit_id"], {
+        "exhibit_title": "Changed After Lock",
+        "anchor_utterance_id": "utt-5",
+    })
+
+    snap = snapshot_repo.get_snapshot(snap_id)
+    _, index_inputs = _build_paginated_and_index_inputs_from_snapshot_state(snap.state)
+    assert len(index_inputs.exhibit_events) == 1
+    assert index_inputs.exhibit_events[0].exhibit_number == "1"
+    assert index_inputs.exhibit_events[0].exhibit_title == "Photograph"
+
+
+def test_packaging_assembles_authoritative_exhibit_index_from_snapshot(client, sample_job_with_content):
+    from backend.transcript import repository as trepo
+
+    job_id = sample_job_with_content
+    trepo.create_exhibit(job_id, {
+        "exhibit_number": "3",
+        "exhibit_title": "Contract",
+        "anchor_utterance_id": "utt-4",
+    })
+
+    snap_res = client.post(f"/api/snapshots/jobs/{job_id}", json={"category": "CERTIFIED"})
+    snap_id = snap_res.json()["snapshot_id"]
+    assert client.post(f"/api/snapshots/{snap_id}/lock").status_code == 200
+
+    metadata = {
+        "cause_number": "2024-CI-09912",
+        "caption": "Acme Corp. v. Dana Reed",
+        "court": "288th Judicial District Court, Bexar County, Texas",
+        "witness_name": "Dana Reed",
+        "reporter_name": "Miah Bardot",
+        "reporter_csr_number": "TX-10423",
+        "proceedings_date": "May 21, 2026",
+    }
+    assemble_res = client.post(
+        f"/api/packages/jobs/{job_id}",
+        json={"snapshot_id": snap_id, "metadata": metadata},
+    )
+    assert assemble_res.status_code == 200
+    body = assemble_res.json()
+    assert body["generation_report"]["exhibits_indexed"] == 1
+
+    package_detail = client.get(f"/api/packages/{body['package_id']}").json()
+    exhibit_entries = package_detail["package"]["indices"]["exhibit"]["entries"]
+    assert exhibit_entries[0]["label"] == "Exhibit 3"

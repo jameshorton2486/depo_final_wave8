@@ -71,6 +71,16 @@ def list_snapshots(job_id: str) -> list[Snapshot]:
     return [_row_to_snapshot(r) for r in rows]
 
 
+def has_locked_snapshot(job_id: str) -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM transcript_snapshots "
+            "WHERE job_id = ? AND locked = 1 LIMIT 1",
+            (job_id,),
+        ).fetchone()
+    return row is not None
+
+
 def lock_snapshot(snapshot_id: str) -> bool:
     """Mark a snapshot as a Certification Snapshot (immutable).
 

@@ -166,3 +166,52 @@ def test_certify_already_certified_returns_400(client, sample_job_with_content):
     )
     assert again.status_code == 400
     assert "certified" in again.json()["detail"].lower()
+
+
+def test_recertification_creates_new_immutable_lineage(client, sample_job_with_content):
+    job_id = sample_job_with_content
+
+    # First certification lineage.
+    snap1 = _create_and_lock_snapshot(client, job_id)
+    assembled1 = client.post(
+        f"/api/packages/jobs/{job_id}",
+        json={"snapshot_id": snap1, "metadata": _VALID_METADATA, "freelance": True},
+    ).json()
+    cert1 = client.post(
+        f"/api/packages/{assembled1['package_id']}/certify",
+        json={"metadata": _VALID_METADATA},
+    )
+    assert cert1.status_code == 200
+
+    # Working transcript evolves after certification.
+    edit = client.put(
+        f"/api/transcripts/jobs/{job_id}/working-transcript",
+        json={
+            "utterances": [
+                {"utterance_id": "utt-1", "working_text": "Second certified version text."}
+            ],
+            "source": "test_suite",
+        },
+    )
+    assert edit.status_code == 200
+
+    # Second certification lineage.
+    snap2 = _create_and_lock_snapshot(client, job_id)
+    assembled2 = client.post(
+        f"/api/packages/jobs/{job_id}",
+        json={"snapshot_id": snap2, "metadata": _VALID_METADATA, "freelance": True},
+    ).json()
+    cert2 = client.post(
+        f"/api/packages/{assembled2['package_id']}/certify",
+        json={"metadata": _VALID_METADATA},
+    )
+    assert cert2.status_code == 200
+
+    packages = client.get(f"/api/packages/jobs/{job_id}").json()["packages"]
+    certified = [p for p in packages if p["package_state"] == "CERTIFIED"]
+    assert len(certified) == 2
+    assert assembled1["package_id"] != assembled2["package_id"]
+    assert snap1 != snap2
+
+    provenance = client.get(f"/api/transcripts/jobs/{job_id}/provenance").json()["events"]
+    assert any(ev["event_type"] == "recertification_created" for ev in provenance)
