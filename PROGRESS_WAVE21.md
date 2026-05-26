@@ -156,3 +156,36 @@ Next phase:
 1. Wave 21 final self-validation pass
 2. `VALIDATION_WAVE21.md`
 3. final `PROGRESS_WAVE21.md` summary
+
+## 2026-05-25 — Final Summary
+
+Operational after Wave 21:
+- Subsystem 1 — Case-Binding Integrity
+- Subsystem 2 — Exhibit Persistence Subsystem
+- Subsystem 3 — Certificate Data-Capture Path
+- Subsystem 4 — Runtime Offline-Provider Mode
+- Subsystem 5 — Documentation Reconciliation
+
+Remaining partial:
+- none at the subsystem level
+
+Blocked:
+- none
+
+Open policy question:
+- `Q20-6` remains open in `docs/BLOCKERS.md`
+- this is a James authority/required-field-set confirmation, not an implementation blocker
+
+Test-count delta from the Phase 0 baseline:
+- baseline: `495 passed, 1 skipped, 29 warnings`
+- final: `504 passed, 1 skipped, 33 warnings`
+- delta: `+9 passing tests`
+
+Recommended next step:
+- run the real-data manual workflow in `docs/audits/REAL_WORLD_VALIDATION_LOG.md`
+- use:
+  - real audio
+  - real NOD samples
+  - real exhibit usage
+  - real certification / recertification workflow
+- treat Wave 21 as the last pre-flight hardening pass before human trust validation
