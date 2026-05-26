@@ -40,6 +40,14 @@ const JOB_STATUS_LABEL = {
     failed: "Failed",
 };
 
+function handleZoomCredentialsSubmit(event) {
+    if (event) {
+        event.preventDefault();
+    }
+    startZoomStreaming();
+    return false;
+}
+
 function addFilesToIngestionQueue(input) {
     if (input.files && input.files.length) {
         for (let i = 0; i < input.files.length; i++) {
@@ -858,3 +866,4 @@ window.startZoomStreaming = startZoomStreaming;
 window.stopZoomStreaming = stopZoomStreaming;
 window.runAudioVisualizerAnimation = runAudioVisualizerAnimation;
 window.runLiveTestimonySimulation = runLiveTestimonySimulation;
+window.handleZoomCredentialsSubmit = handleZoomCredentialsSubmit;

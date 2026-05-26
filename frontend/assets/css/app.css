@@ -6,20 +6,26 @@
             scrollbar-gutter: stable;
         }
 
-        /* Custom scrollbar styling */
+        /* ===== Custom scrollbar — visible on dark panels ===== */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
         }
         ::-webkit-scrollbar-track {
-            background: #0f172a;
+            background: transparent;
         }
         ::-webkit-scrollbar-thumb {
-            background: #334155;
+            background-color: #5b6170;      /* mid-grey — clear against dark panels */
             border-radius: 3px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: #475569;
+            background-color: #7a8190;      /* slightly lighter on hover */
+        }
+
+        /* Firefox fallback */
+        .stage-panel {
+            scrollbar-width: thin;
+            scrollbar-color: #5b6170 transparent;
         }
 
         /* Highlight effects */
