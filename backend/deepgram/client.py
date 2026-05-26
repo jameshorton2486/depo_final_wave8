@@ -30,6 +30,7 @@ import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
 
+from backend.config import current_transcription_provider
 from loguru import logger
 
 DEEPGRAM_ENDPOINT = "https://api.deepgram.com/v1/listen"
@@ -129,6 +130,16 @@ def transcribe_file(audio_path: str | Path, keyterms: list[str] | None = None) -
     logger.info(
         f"Preparing Deepgram request for {audio_path.name} with {len(keyterms)} keyterm(s)"
     )
+
+    provider = current_transcription_provider()
+    if provider == "offline":
+        logger.warning(
+            "DEPOPRO_TRANSCRIPTION_PROVIDER=offline -- using deterministic "
+            f"offline transcript for {audio_path.name}. This output is non-authoritative "
+            "and cannot be certified."
+        )
+        response = _synthetic_response(audio_path)
+        return {"source": "offline-fallback", "response": response}
 
     if api_key_present():
         logger.info(f"Deepgram: transcribing {audio_path.name} via REST API")

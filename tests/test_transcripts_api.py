@@ -211,6 +211,39 @@ def test_update_job_unknown_case_400(client, sample_job):
     assert res.status_code == 400
 
 
+def test_runtime_offline_provider_marks_job_non_authoritative(client, monkeypatch):
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "pretend-live-key")
+    monkeypatch.setenv("DEPOPRO_TRANSCRIPTION_PROVIDER", "offline")
+
+    res = _upload(client, filename="offline_mode.mp3")
+    assert res.status_code == 201
+    job_id = res.json()["job_id"]
+
+    job = client.get(f"/api/transcripts/jobs/{job_id}").json()
+    assert job["transcription_source"] == "offline-fallback"
+    assert job["authoritative_transcript"] is False
+
+
+def test_packaging_refuses_offline_validation_transcript(client):
+    job = _upload(client).json()
+    job_id = job["job_id"]
+
+    snap_res = client.post(
+        f"/api/snapshots/jobs/{job_id}",
+        json={"category": "CERTIFIED"},
+    )
+    assert snap_res.status_code == 200
+    snap_id = snap_res.json()["snapshot_id"]
+    assert client.post(f"/api/snapshots/{snap_id}/lock").status_code == 200
+
+    assemble_res = client.post(
+        f"/api/packages/jobs/{job_id}",
+        json={"snapshot_id": snap_id, "metadata": {}},
+    )
+    assert assemble_res.status_code == 422
+    assert "non-authoritative" in assemble_res.json()["detail"].lower()
+
+
 def test_delete_job(client):
     job = _upload(client).json()
     res = client.delete(f"/api/transcripts/jobs/{job['job_id']}")

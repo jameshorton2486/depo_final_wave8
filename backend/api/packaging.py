@@ -483,10 +483,20 @@ def assemble(job_id: str, payload: AssembleRequest) -> dict:
     accompany the request; required fields are validated and any missing
     ones generate warnings in the Generation Report.
     """
-    if trepo.get_job(job_id) is None:
+    job = trepo.get_job(job_id)
+    if job is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Transcript job {job_id} not found")
+    if job.get("transcription_source") == "offline-fallback":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Offline validation transcripts are non-authoritative and cannot "
+                "enter the certification/package chain. Re-transcribe with the "
+                "Deepgram provider before certification."
+            ),
+        )
 
     snap = snapshot_repo.get_snapshot(payload.snapshot_id)
     if snap is None:
