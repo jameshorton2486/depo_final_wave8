@@ -161,3 +161,36 @@ Rules:
 - Cases used:
 - Transcript jobs used:
 - Result summary:
+
+### Validation Session
+- Date: 2026-05-25
+- Tester: Codex CLI
+- Branch: `mvp-e2e-validation`
+- Build / commit: `fd77194`
+- Cases used: synthetic validation case via localhost API
+- Transcript jobs used: synthetic upload attempt plus existing live job inventory check
+- Result summary:
+  - local FastAPI app started successfully on `http://127.0.0.1:8765`
+  - `/api/health` returned healthy status
+  - Stage 4/5 targeted verification suite passed locally before browser validation attempt
+  - synthetic live upload validation was blocked because the environment used a real Deepgram provider and correctly rejected fake audio bytes as corrupt media
+  - no Stage 4/5 regression was identified from that runtime limitation
+
+### Defect
+- Stage: `2`
+- Title: Synthetic validation upload fails when live Deepgram key is active
+- Repro steps:
+  - start local app against real environment
+  - upload fake/synthetic `.mp3` bytes intended only for offline fallback validation
+- Expected:
+  - offline fallback path for synthetic validation media
+- Actual:
+  - live Deepgram path was used and returned HTTP 400 corrupt/unsupported audio
+- Severity: `LOW`
+- Trust risk: `NONE`
+- Screenshot:
+- Console logs:
+  - `DeepgramError: Deepgram API HTTP 400: Bad Request: failed to process audio: corrupt or unsupported data`
+- Notes:
+  - this is an environment/runtime validation constraint, not a Stage 4/5 authority regression
+  - use a real audio sample or force offline provider mode for synthetic MVP smoke runs

@@ -45,10 +45,10 @@ Install dependencies:
 pip install -r backend\requirements.txt
 ```
 
-Optional frontend tooling for the maintenance scripts:
+Optional frontend tooling for the maintenance scripts and local Tailwind build:
 
 ```powershell
-npm install --save-dev prettier eslint
+npm install
 ```
 
 Copy `.env.example` to `.env` and adjust if needed. All variables are
@@ -98,7 +98,7 @@ depo_final_wave8/
 │   └── config.py         # Settings dataclass + env wiring
 ├── desktop/
 │   └── launcher.py       # PyWebView runtime
-├── frontend/             # static UI (Tailwind CDN, vanilla JS)
+├── frontend/             # static UI (local Tailwind build, vanilla JS)
 │   ├── index.html
 │   ├── assets/{css,js}/
 │   └── screens/          # stage_1_intake.html … stage_6_export.html

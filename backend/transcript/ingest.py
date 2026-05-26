@@ -144,7 +144,7 @@ def _run_pipeline(job: dict) -> None:
     raw_packet = packet.build_packet(layer="raw", **common_packet_args)
     working_packet = packet.build_packet(layer="working", **common_packet_args)
 
-    raw_path = packet.write_packet(raw_packet, out_dir / "raw.json")
+    raw_path = packet.write_raw_packet(raw_packet, out_dir / "raw.json")
     working_path = packet.write_packet(working_packet, out_dir / "working.json")
 
     # ---- 5. Persist canonical content to SQLite ---------------------

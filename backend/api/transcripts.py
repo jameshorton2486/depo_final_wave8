@@ -61,6 +61,7 @@ from backend.models.transcripts import (
 from backend.services import correction_trigger, intake_store, speaker_mapping
 from backend.transcript import export_render as export_render_mod
 from backend.transcript import ingest
+from backend.transcript import integrity as integrity_mod
 from backend.transcript import packet as packet_mod
 from backend.transcript import provenance as provenance_mod
 from backend.transcript import render as render_mod
@@ -98,6 +99,22 @@ def _audio_dir() -> Path:
     path = settings.data_root / "audio"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _assert_raw_integrity_or_409(job_row: dict) -> None:
+    raw_packet_path = (job_row or {}).get("raw_packet_path")
+    if not raw_packet_path:
+        return
+    try:
+        integrity_mod.verify_raw_packet(raw_packet_path)
+    except integrity_mod.RawTranscriptIntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Raw transcript integrity verification failed. The immutable raw "
+                f"record for job {job_row.get('job_id')} appears to have been tampered with: {exc}"
+            ),
+        ) from exc
 
 
 # ====================================================================
@@ -319,6 +336,7 @@ def get_job_content(job_id: str) -> TranscriptContent:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Transcript job {job_id} not found",
         )
+    _assert_raw_integrity_or_409(row)
     raw_utterances = trepo.get_utterances(job_id, layer="raw")
     working_utterances = trepo.get_utterances(job_id, layer="working")
     raw_map = {u["utterance_id"]: u for u in raw_utterances}
@@ -364,6 +382,7 @@ def save_working_transcript(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Transcript job {job_id} not found",
         )
+    _assert_raw_integrity_or_409(row)
     try:
         result = working_state_mod.persist_working_transcript(
             job_id,
@@ -738,6 +757,8 @@ def _read_packet_or_404(job_id: str, layer: str) -> dict:
                 f"No {layer} packet for job {job_id} yet " f"(current status: {row['status']})."
             ),
         )
+    if layer == "raw":
+        _assert_raw_integrity_or_409(row)
     return packet_mod.read_packet(packet_path)
 
 

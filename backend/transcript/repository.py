@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from typing import Iterator, Optional
 
 from backend.config import settings
+from backend.transcript.integrity import RawTranscriptImmutableError
 
 # ====================================================================
 # Connection helper (same conventions as the Layer 1 repository)
@@ -170,11 +171,22 @@ def update_job(job_id: str, patch: dict) -> Optional[dict]:
     filtered = {k: v for k, v in patch.items() if k in allowed}
 
     with get_connection() as conn:
-        existing = conn.execute(
-            "SELECT 1 FROM transcript_jobs WHERE job_id = ?", (job_id,)
+        existing_row = conn.execute(
+            f"SELECT {', '.join(_JOB_COLUMNS)} FROM transcript_jobs WHERE job_id = ?",
+            (job_id,),
         ).fetchone()
+        existing = _job_row_to_dict(existing_row) if existing_row else None
         if existing is None:
             return None
+
+        if (
+            "raw_packet_path" in filtered
+            and existing.get("raw_packet_path")
+            and filtered["raw_packet_path"] != existing.get("raw_packet_path")
+        ):
+            raise RawTranscriptImmutableError(
+                f"Transcript job {job_id} already has an immutable raw packet path."
+            )
 
         if filtered:
             set_clause = ", ".join(f"{k} = ?" for k in filtered)
@@ -278,10 +290,19 @@ def save_transcript_content(
 ) -> None:
     """Persist a job's full canonical content in one transaction.
 
-    Idempotent: any existing rows for the job are cleared first, so
-    re-processing a job replaces its content cleanly.
+    The raw transcript layer is immutable once captured. Attempting to
+    persist canonical raw content a second time for the same job raises
+    RawTranscriptImmutableError.
     """
     with get_connection() as conn:
+        existing_raw = conn.execute(
+            "SELECT COUNT(1) AS count FROM transcript_utterances WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        if existing_raw and int(existing_raw["count"] or 0) > 0:
+            raise RawTranscriptImmutableError(
+                f"Transcript job {job_id} already has immutable raw utterances."
+            )
         conn.execute("DELETE FROM transcript_words WHERE job_id = ?", (job_id,))
         conn.execute("DELETE FROM transcript_utterances WHERE job_id = ?", (job_id,))
         conn.execute("DELETE FROM transcript_speakers WHERE job_id = ?", (job_id,))

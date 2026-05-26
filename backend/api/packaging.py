@@ -33,12 +33,30 @@ from backend.packaging.package_repo import (
     save_package,
     update_package_state,
 )
+from backend.transcript import integrity as integrity_mod
+from backend.transcript import mutation_detection as mutation_detection_mod
 from backend.transcript import repository as trepo
 from backend.transcript import provenance as provenance_mod
 from backend.transcript_state import snapshot_repo
 from backend.services import intake_store
 
 router = APIRouter(prefix="/api/packages", tags=["packages"])
+
+
+def _assert_job_raw_integrity(job: dict) -> None:
+    raw_packet_path = (job or {}).get("raw_packet_path")
+    if not raw_packet_path:
+        return
+    try:
+        integrity_mod.verify_raw_packet(raw_packet_path)
+    except integrity_mod.RawTranscriptIntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Raw transcript integrity verification failed. Certification and "
+                f"packaging are blocked until the immutable raw packet is restored: {exc}"
+            ),
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -488,6 +506,7 @@ def assemble(job_id: str, payload: AssembleRequest) -> dict:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Transcript job {job_id} not found")
+    _assert_job_raw_integrity(job)
     if job.get("transcription_source") == "offline-fallback":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -623,6 +642,60 @@ def certify(package_id: str, payload: CertifyRequest) -> dict:
 
     # Auto-populate metadata from DB; explicit payload fields win.
     job_id = summary["job_id"]
+    snapshot_id = summary.get("snapshot_id") or ""
+    snap = snapshot_repo.get_snapshot(snapshot_id) if snapshot_id else None
+    if snap is not None:
+        mutation_report = mutation_detection_mod.build_mutation_report(
+            job_id,
+            snapshot_state=snap.state or {},
+            snapshot_id=snap.snapshot_id,
+        )
+        if mutation_report["warnings"]:
+            try:
+                provenance_mod.record_event(
+                    job_id,
+                    event_type="mutation_detection_warning",
+                    title="Mutation Detection Warning",
+                    detail="Certification review found attributable transcript changes.",
+                    actor_type="system",
+                    source="packaging",
+                    metadata={
+                        "snapshot_id": snap.snapshot_id,
+                        "warnings": mutation_report["warnings"],
+                        "metrics": mutation_report["diff"]["metrics"],
+                    },
+                    related_snapshot_id=snap.snapshot_id,
+                    related_package_id=package_id,
+                )
+            except Exception as exc:
+                logger.warning(f"mutation warning provenance record failed: {exc}")
+        if mutation_report["blocking"]:
+            try:
+                provenance_mod.record_event(
+                    job_id,
+                    event_type="mutation_detection_blocked",
+                    title="Certification Blocked by Mutation Detection",
+                    detail="Unexplained transcript drift blocked certification.",
+                    actor_type="system",
+                    source="packaging",
+                    metadata={
+                        "snapshot_id": snap.snapshot_id,
+                        "errors": mutation_report["errors"],
+                        "metrics": mutation_report["diff"]["metrics"],
+                    },
+                    related_snapshot_id=snap.snapshot_id,
+                    related_package_id=package_id,
+                )
+            except Exception as exc:
+                logger.warning(f"mutation block provenance record failed: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Certification blocked by mutation detection: "
+                    + "; ".join(mutation_report["errors"])
+                ),
+            )
+
     metadata = _build_metadata_for_job(job_id, payload.metadata or {})
 
     try:

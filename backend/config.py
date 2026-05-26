@@ -25,6 +25,8 @@ class Settings:
     data_root: Path = PROJECT_ROOT / "data"
     sqlite_root: Path = PROJECT_ROOT / "data" / "sqlite"
     database_path: Path = PROJECT_ROOT / "data" / "sqlite" / "depo_pro.db"
+    audio_retention_days: int = int(os.getenv("DEPOPRO_AUDIO_RETENTION_DAYS", "7"))
+    audio_retention_dry_run: bool = os.getenv("DEPOPRO_AUDIO_RETENTION_DRY_RUN", "1") == "1"
 
 
 settings = Settings()

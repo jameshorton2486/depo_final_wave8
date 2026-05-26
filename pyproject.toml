@@ -15,7 +15,7 @@ quote-style = "double"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --basetemp=.pytest_tmp"
 
 [project]
 name = "depo-pro"

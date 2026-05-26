@@ -49,6 +49,8 @@ def _capture_state(job_id: str) -> dict:
                 "working_text": u.get("working_text"),
                 "text": u.get("text") or "",
                 "is_working_override": bool(u.get("is_working_override")),
+                "working_source": u.get("working_source") or "",
+                "working_updated_at": u.get("working_updated_at") or "",
             }
             for u in utterances
         ]

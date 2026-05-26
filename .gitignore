@@ -114,6 +114,7 @@ MY_CHEATS.txt
 # Testing / Pytest
 # =========================
 .pytest_cache/
+.pytest_tmp/
 .coverage
 htmlcov/
 coverage/
@@ -131,3 +132,7 @@ coverage/
 data/transcripts/
 data/audio/
 data/sqlite/
+
+data/diff/
+data/cases/api-case-1/
+*.zip

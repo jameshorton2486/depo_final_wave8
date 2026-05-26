@@ -31,6 +31,12 @@ async def lifespan(_: FastAPI):
     except Exception as exc:  # noqa: BLE001 - log then re-raise so startup fails loudly
         logger.exception(f"Database initialization failed: {exc}")
         raise
+    try:
+        from backend.transcript.audio_retention import prune_audio
+
+        prune_audio()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Audio retention sweep failed (non-fatal): {exc}")
     logger.info("Backend ready.")
     yield
     logger.info("Backend shutting down.")

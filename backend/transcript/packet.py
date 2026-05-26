@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.transcript.assembler import NormalizedTranscript
+from backend.transcript.integrity import write_immutable_raw_packet
 
 PACKET_VERSION = 1
 
@@ -98,6 +99,11 @@ def write_packet(packet: dict, destination: str | Path) -> Path:
         encoding="utf-8",
     )
     return destination
+
+
+def write_raw_packet(packet: dict, destination: str | Path) -> Path:
+    """Write the immutable RAW packet exactly once."""
+    return write_immutable_raw_packet(packet, destination)
 
 
 def read_packet(source: str | Path) -> dict:
