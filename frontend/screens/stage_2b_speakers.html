@@ -1,43 +1,30 @@
-<!-- Stage 2b — Speaker Mapping -------------------------------------------------
-     Sits between transcription (Stage 2) and the Workspace (Stage 3).
-     The reporter maps each raw diarization speaker to a real person/role.
-     Multiple raw speakers can be the same person; giving them the same
-     role + name collapses them into one canonical participant. -->
+<!-- DEPRECATED — authoritative speaker mapping now occurs in Stage 3 Workspace. -->
 <div class="flex-1 flex flex-col overflow-hidden bg-slate-950">
-
-    <!-- Step header -->
     <div class="shrink-0 px-8 py-4 border-b border-slate-800 bg-slate-900/60">
         <div class="flex items-center gap-3">
-            <span class="px-2 py-0.5 text-[10px] font-bold rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 tracking-wider">STEP 2B</span>
-            <h1 class="text-lg font-bold text-white">Speaker Mapping</h1>
+            <span class="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 tracking-wider">DEPRECATED</span>
+            <h1 class="text-lg font-bold text-white">Stage 2B Speaker Mapping</h1>
         </div>
         <p class="text-xs text-slate-400 mt-1.5 max-w-3xl leading-relaxed">
-            Deepgram detects speakers as acoustic clusters &mdash; one person on a
-            shifting microphone is often split across several. Assign each detected
-            speaker to a person and role. Give two speakers the
-            <span class="text-slate-300 font-medium">same name and role</span> to
-            merge them into one participant. The transcript then renders Q/A and
-            colloquy from your assignments &mdash; no AI touches the record.
+            Authoritative speaker mapping no longer happens here. Stage 2 is transcript ingestion only.
+            Stage 3 Workspace now owns the speaker map, using the same raw diarization data and backend APIs.
         </p>
     </div>
 
-    <!-- Mapping body (populated by stage_2b.js) -->
-    <div id="speakerMappingRoot" class="flex-1 overflow-auto px-8 py-6">
-        <p class="text-sm text-slate-500 italic">Loading detected speakers&hellip;</p>
-    </div>
-
-    <!-- Footer actions -->
-    <div class="shrink-0 px-8 py-3 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between">
-        <button onclick="goToStage(2)"
-                class="px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-all">
-            &larr; Back to Transcripts
-        </button>
-        <div class="flex items-center gap-3">
-            <span id="speakerMappingHint" class="text-[11px] text-slate-500"></span>
-            <button id="confirmSpeakerMappingBtn" onclick="confirmSpeakerMapping()"
-                    class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm shadow-indigo-500/20 disabled:opacity-40 disabled:cursor-not-allowed">
-                Confirm Mapping &amp; Continue &rarr;
-            </button>
+    <div class="flex-1 overflow-auto px-8 py-8">
+        <div class="max-w-3xl bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
+            <h2 class="text-sm font-bold text-white mb-2">Stage 3 Is Now Authoritative</h2>
+            <p class="text-xs text-slate-400 leading-relaxed mb-4">
+                Raw speaker ids, utterance timing, confidence, and diarization are preserved. The reporter now assigns human-readable names and roles from the Stage 3 Workspace so transcript review and speaker authority stay in one place.
+            </p>
+            <div class="flex items-center gap-3">
+                <button onclick="goToStage(3)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all">
+                    Open Stage 3 Workspace
+                </button>
+                <button onclick="goToStage(2)" class="px-4 py-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 rounded-lg text-xs font-semibold transition-all">
+                    Back to Stage 2
+                </button>
+            </div>
         </div>
     </div>
 </div>

@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from backend.transcript import repository as trepo
+from backend.transcript import provenance as provenance_mod
 from backend.transcript_state import snapshot_repo
 from backend.transcript_state import snapshot_service
 from backend.transcript_state.model import SNAPSHOT_CATEGORIES
@@ -83,6 +84,19 @@ def lock_snapshot(snapshot_id: str) -> dict:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Snapshot {snapshot_id} not found")
     snapshot_repo.lock_snapshot(snapshot_id)
+    try:
+        provenance_mod.record_event(
+            snap.job_id,
+            event_type="certification_snapshot_locked",
+            title="Certification Snapshot Locked",
+            detail="Snapshot locked as immutable certification state.",
+            actor_type="system",
+            source="snapshots",
+            metadata={"category": snap.category, "state_hash": snap.state_hash},
+            related_snapshot_id=snapshot_id,
+        )
+    except Exception:
+        pass
     return {"snapshot_id": snapshot_id, "locked": True,
             "is_certification_snapshot": True}
 

@@ -69,6 +69,11 @@ class TranscriptUtterance(BaseModel):
     start_time: float
     end_time: float
     text: str
+    raw_text: Optional[str] = None
+    working_text: Optional[str] = None
+    is_working_override: bool = False
+    working_source: Optional[str] = None
+    working_updated_at: Optional[str] = None
     avg_confidence: Optional[float] = None
 
 
@@ -106,6 +111,22 @@ class TranscriptParticipant(BaseModel):
     honorific: Optional[str] = None     # MR | MS | MRS | DR | None
 
 
+class TranscriptExhibit(BaseModel):
+    exhibit_id: str
+    job_id: str
+    case_id: Optional[str] = None
+    session_id: Optional[str] = None
+    exhibit_number: str
+    exhibit_title: str = ""
+    offering_attorney: str = ""
+    description: str = ""
+    anchor_utterance_id: str
+    anchor_note: str = ""
+    sort_order: int = 0
+    created_at: str
+    updated_at: str
+
+
 class TranscriptContent(BaseModel):
     """The full canonical content for a job: speakers + utterances + words.
 
@@ -118,6 +139,7 @@ class TranscriptContent(BaseModel):
     utterances: list[TranscriptUtterance]
     words: list[TranscriptWord]
     participants: list[TranscriptParticipant] = []
+    exhibits: list[TranscriptExhibit] = []
 
 
 # --------------------------------------------------------------------
@@ -169,6 +191,88 @@ class SpeakerMappingApplyResponse(BaseModel):
     lines: list[dict]          # rendered WorkingLine dicts
     unmapped_cluster_count: int
     correction_engine_ran: bool
+
+
+# --------------------------------------------------------------------
+# Stage 3 authoritative working transcript state
+# --------------------------------------------------------------------
+
+
+class WorkingTranscriptUtterance(BaseModel):
+    utterance_id: str
+    working_text: str
+
+
+class WorkingTranscriptSaveRequest(BaseModel):
+    utterances: list[WorkingTranscriptUtterance]
+    source: str = "stage3_workspace"
+
+
+class WorkingTranscriptSaveResponse(BaseModel):
+    job_id: str
+    saved: int
+    removed: int
+    override_count: int
+    working_packet_path: Optional[str] = None
+
+
+class TranscriptExhibitCreateRequest(BaseModel):
+    exhibit_number: str
+    exhibit_title: str = ""
+    offering_attorney: str = ""
+    description: str = ""
+    anchor_utterance_id: str
+    anchor_note: str = ""
+    sort_order: Optional[int] = None
+
+
+class TranscriptExhibitUpdateRequest(BaseModel):
+    exhibit_number: Optional[str] = None
+    exhibit_title: Optional[str] = None
+    offering_attorney: Optional[str] = None
+    description: Optional[str] = None
+    anchor_utterance_id: Optional[str] = None
+    anchor_note: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class TranscriptExhibitListResponse(BaseModel):
+    job_id: str
+    exhibits: list[TranscriptExhibit]
+    count: int
+
+
+class TranscriptProvenanceEvent(BaseModel):
+    event_id: str
+    job_id: str
+    event_type: str
+    title: str
+    detail: str = ""
+    actor_type: str = "system"
+    source: str = ""
+    metadata: dict = {}
+    related_snapshot_id: str = ""
+    related_suggestion_id: str = ""
+    related_package_id: str = ""
+    created_at: str
+
+
+class TranscriptProvenanceListResponse(BaseModel):
+    job_id: str
+    events: list[TranscriptProvenanceEvent]
+    count: int
+
+
+class TranscriptProvenanceCreateRequest(BaseModel):
+    event_type: str
+    title: str
+    detail: str = ""
+    actor_type: str = "system"
+    source: str = "workspace"
+    metadata: dict = {}
+    related_snapshot_id: str = ""
+    related_suggestion_id: str = ""
+    related_package_id: str = ""
 
 
 # --------------------------------------------------------------------

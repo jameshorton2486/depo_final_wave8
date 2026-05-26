@@ -160,11 +160,30 @@ def test_role_validation():
 # --------------------------------------------------------------------
 # API endpoints
 # --------------------------------------------------------------------
+def _create_bound_case_session(client):
+    case = client.post("/api/cases", json={
+        "case_number_value": "2024-CI-28593",
+        "caption_full": "SARAH JENKINS vs. NEXUS PHARMA INC.",
+        "judicial_district": "101st Judicial District",
+        "county": "Dallas County",
+        "state": "Texas",
+    }).json()
+    session = client.post("/api/sessions", json={
+        "case_id": case["case_id"],
+        "scheduled_at": "2026-05-19T10:00:00-05:00",
+        "scheduled_end_at": "2026-05-19T12:30:00-05:00",
+        "witness_name": "Dr. Donald Leifer",
+    }).json()
+    return case, session
+
+
 def _upload(client):
     fake_audio = b"fake-media-bytes-for-offline-fallback" * 40
+    case, session = _create_bound_case_session(client)
     res = client.post(
         "/api/transcripts/upload",
         files={"file": ("session.mp3", fake_audio, "audio/mpeg")},
+        data={"case_id": case["case_id"], "session_id": session["session_id"]},
     )
     assert res.status_code == 201
     return res.json()["job_id"]

@@ -145,3 +145,63 @@ def test_suggestions_list_endpoint(client):
 def test_approve_unknown_suggestion_404(client):
     res = client.post("/api/ai-review/suggestions/nope/approve")
     assert res.status_code == 404
+
+
+def test_apply_requires_approved_status(client, sample_job_with_content):
+    from backend.ai_review import review_queue
+
+    s = Suggestion(
+        job_id=sample_job_with_content,
+        kind=KIND_GARBLE,
+        reason="clear artifact",
+        target_utterance_id="utt-1",
+        before_text="My name Dana Reed.",
+        after_text="My name is Dana Reed.",
+        four_part_pass=True,
+    )
+    review_queue.save_suggestions([s])
+    res = client.post(f"/api/ai-review/suggestions/{s.suggestion_id}/apply")
+    assert res.status_code == 400
+    assert "approved" in res.json()["detail"].lower()
+
+
+def test_apply_approved_suggestion_mutates_working_not_raw(client, sample_job_with_content):
+    from backend.ai_review import review_queue
+    from backend.transcript import repository as trepo
+
+    raw_before = next(
+        u for u in trepo.get_utterances(sample_job_with_content, layer="raw")
+        if u["utterance_id"] == "utt-1"
+    )
+    new_text = raw_before["text"] + " Confirmed by reporter."
+
+    s = Suggestion(
+        job_id=sample_job_with_content,
+        kind=KIND_GARBLE,
+        reason="clear artifact",
+        target_utterance_id="utt-1",
+        before_text=raw_before["text"],
+        after_text=new_text,
+        four_part_pass=True,
+        status=STATUS_APPROVED,
+    )
+    review_queue.save_suggestions([s])
+    res = client.post(f"/api/ai-review/suggestions/{s.suggestion_id}/apply")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["applied"] is True
+
+    raw = next(
+        u for u in trepo.get_utterances(sample_job_with_content, layer="raw")
+        if u["utterance_id"] == "utt-1"
+    )
+    working = next(
+        u for u in trepo.get_utterances(sample_job_with_content, layer="working")
+        if u["utterance_id"] == "utt-1"
+    )
+    assert raw["text"] == raw_before["text"]
+    assert working["text"] == new_text
+    assert working["working_source"] == "ai_apply"
+
+    listed = client.get(f"/api/transcripts/jobs/{sample_job_with_content}/provenance").json()
+    assert any(ev["event_type"] == "ai_suggestion_applied" for ev in listed["events"])

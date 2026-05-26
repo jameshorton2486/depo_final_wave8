@@ -90,3 +90,18 @@ def set_status(suggestion_id: str, status: str) -> bool:
             "reviewed_at = datetime('now') WHERE suggestion_id = ?",
             (status, suggestion_id))
         return cur.rowcount > 0
+
+
+def update_payload(suggestion_id: str, patch: dict) -> bool:
+    """Merge fields into a suggestion's JSON payload."""
+    suggestion = get_suggestion(suggestion_id)
+    if suggestion is None:
+        return False
+    payload = dict(suggestion.payload or {})
+    payload.update(patch or {})
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE ai_suggestions SET payload_json = ? WHERE suggestion_id = ?",
+            (json.dumps(payload) if payload else None, suggestion_id),
+        )
+    return cur.rowcount > 0

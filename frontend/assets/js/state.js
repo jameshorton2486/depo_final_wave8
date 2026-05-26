@@ -8,6 +8,23 @@
             caseId: null,
             sessionId: null,
             reporterId: null,
+            stage1: {
+                rawIntakeNotes: "",
+                keytermEntries: [],
+                parserMetadata: {
+                    appearances: [],
+                    speaker_hints: [],
+                    deepgram_config: {},
+                    jurisdiction_type: "texas_state",
+                    location_type: "unknown",
+                    detected_types: [],
+                    warnings: [],
+                    field_sources: {},
+                },
+                workspace: {
+                    sessions: {},
+                },
+            },
 
             // Texas UFM Mandatory Schema Mapping (Binds directly to verified input UI)
             caseInfo: {
@@ -42,6 +59,12 @@
             // Populated from real ingested transcripts (Stage 2 -> Stage 3).
             transcriptLines: [],
             exhibits: [],
+            exhibitsMeta: {
+                jobId: null,
+                lastLoadedAt: null,
+                lastSavedAt: null,
+                lastError: null,
+            },
             correctionsMemory: [],
             provenance: [],
             activePlayback: false,
@@ -63,6 +86,37 @@
             // transcriptJobs holds the persisted jobs loaded from the
             // backend; readbackTimer debounces the read-back search.
             transcriptJobs: [],
-            readbackTimer: null
+            readbackTimer: null,
+
+            // Transcript workflow bindings.
+            activeTranscriptJobIds: [],
+            workspaceJob: {
+                jobId: null,
+            },
+            workspaceSpeakerMapping: {
+                jobs: [],
+                assignments: {},
+            },
+            workspaceSnapshots: {
+                jobId: null,
+                items: [],
+                selectedSnapshotId: null,
+                lastLoadedAt: null,
+            },
+            certificationHistory: {
+                jobId: null,
+                packages: [],
+                snapshots: [],
+                lastLoadedAt: null,
+                lastError: null,
+            },
+            workspaceSave: {
+                dirty: false,
+                pending: false,
+                saving: false,
+                lastSavedAt: null,
+                lastError: null,
+                timer: null,
+            }
         };
 window.state = state;

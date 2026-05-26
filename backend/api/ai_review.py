@@ -5,12 +5,16 @@ Endpoints:
     POST /api/ai-review/jobs/{job_id}/speaker-map        generate map suggestion
     GET  /api/ai-review/jobs/{job_id}/suggestions        list the review queue
     POST /api/ai-review/suggestions/{id}/approve         approve one
+    POST /api/ai-review/suggestions/{id}/apply           explicitly apply one approved edit
     POST /api/ai-review/suggestions/{id}/reject          reject one
 
-Approval is the only path from a suggestion to the transcript. The AI
-layer never writes the WORKING transcript directly.
+AI suggestions remain advisory. Approval alone never mutates the
+transcript. A second, explicit apply action is required before the
+WORKING transcript changes.
 """
 from __future__ import annotations
+
+import datetime
 
 from fastapi import APIRouter, HTTPException, status
 from loguru import logger
@@ -20,7 +24,9 @@ from backend.ai_review import generators as ai_generators
 from backend.ai_review import review_queue
 from backend.ai_review.speaker_map import generate_speaker_map_suggestion
 from backend.ai_review.suggestions import STATUS_APPROVED, STATUS_REJECTED
+from backend.transcript import provenance as provenance_mod
 from backend.transcript import repository as trepo
+from backend.transcript import working_state as working_state_mod
 
 router = APIRouter(prefix="/api/ai-review", tags=["ai-review"])
 
@@ -62,12 +68,13 @@ def generate_speaker_map(job_id: str) -> dict:
     utterances = trepo.get_utterances(job_id)
     witness_name = ""
     case_id = row.get("case_id")
+    session_id = row.get("session_id")
     if case_id:
         try:
             from backend.db import repository as case_repo
-            case = case_repo.get_case(case_id)
-            if case:
-                witness_name = case.get("witness_name") or ""
+            session = case_repo.get_session(session_id) if session_id else None
+            if session:
+                witness_name = session.get("witness_name") or ""
         except Exception as exc:
             logger.warning(f"witness lookup failed: {exc}")
 
@@ -158,7 +165,7 @@ def list_suggestions(job_id: str, status_filter: str | None = None) -> dict:
 
 @router.post("/suggestions/{suggestion_id}/approve")
 def approve_suggestion(suggestion_id: str) -> dict:
-    """Approve one suggestion. Approval is the gate to the transcript."""
+    """Approve one suggestion. Approval does not mutate transcript text."""
     suggestion = review_queue.get_suggestion(suggestion_id)
     if suggestion is None:
         raise HTTPException(
@@ -179,3 +186,92 @@ def reject_suggestion(suggestion_id: str) -> dict:
             detail=f"Suggestion {suggestion_id} not found")
     review_queue.set_status(suggestion_id, STATUS_REJECTED)
     return {"suggestion_id": suggestion_id, "status": STATUS_REJECTED}
+
+
+@router.post("/suggestions/{suggestion_id}/apply")
+def apply_suggestion(suggestion_id: str) -> dict:
+    """Explicitly apply one APPROVED AI edit to the WORKING transcript.
+
+    Approval alone never mutates transcript text. This endpoint is the
+    second, explicit human action. RAW transcript state remains untouched.
+    """
+    suggestion = review_queue.get_suggestion(suggestion_id)
+    if suggestion is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Suggestion {suggestion_id} not found")
+    if suggestion.status != STATUS_APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Suggestion must be approved before it can be applied.")
+    if not suggestion.is_applicable_edit:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This AI suggestion is advisory only and cannot be applied.")
+    if not suggestion.target_utterance_id or not suggestion.after_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Suggestion does not identify a usable transcript edit.")
+
+    utterances = trepo.get_utterances(suggestion.job_id, layer="working")
+    target = next(
+        (u for u in utterances if u["utterance_id"] == suggestion.target_utterance_id),
+        None,
+    )
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Target utterance {suggestion.target_utterance_id} does not "
+                f"belong to transcript job {suggestion.job_id}."
+            ),
+        )
+
+    result = working_state_mod.persist_working_transcript(
+        suggestion.job_id,
+        [{
+            "utterance_id": suggestion.target_utterance_id,
+            "working_text": suggestion.after_text,
+        }],
+        source="ai_apply",
+    )
+    review_queue.update_payload(
+        suggestion_id,
+        {
+            "applied_to_transcript": True,
+            "applied_at": datetime.datetime.utcnow().isoformat(),
+            "applied_text": suggestion.after_text,
+        },
+    )
+    try:
+        provenance_mod.record_event(
+            suggestion.job_id,
+            event_type="ai_suggestion_applied",
+            title="AI Suggestion Applied",
+            detail=(
+                f"Applied approved AI {suggestion.kind} suggestion to "
+                f"utterance {suggestion.target_utterance_id}."
+            ),
+            actor_type="user",
+            source="ai_review",
+            metadata={
+                "kind": suggestion.kind,
+                "before_text": suggestion.before_text,
+                "after_text": suggestion.after_text,
+            },
+            related_suggestion_id=suggestion_id,
+        )
+    except Exception as exc:
+        logger.warning(f"AI apply provenance record failed: {exc}")
+    logger.info(
+        f"AI suggestion {suggestion_id} applied to job {suggestion.job_id} "
+        f"utterance {suggestion.target_utterance_id}"
+    )
+    return {
+        "suggestion_id": suggestion_id,
+        "status": suggestion.status,
+        "applied": True,
+        "job_id": suggestion.job_id,
+        "target_utterance_id": suggestion.target_utterance_id,
+        "working_transcript": result,
+    }

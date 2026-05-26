@@ -1,3 +1,119 @@
+        function normalizeStage1KeytermSource(source) {
+            const src = String(source || 'manual').trim().toLowerCase();
+            if (src === 'notice_parser') return 'nod_parser';
+            return ['nod_parser', 'text_parser', 'learned', 'manual'].includes(src)
+                ? src
+                : 'manual';
+        }
+
+        function setRawIntakeNotesState(value) {
+            state.stage1.rawIntakeNotes = value || '';
+        }
+
+        function buildStage1ParserMetadata(payload) {
+            const meta = (payload && payload.metadata) || {};
+            return {
+                appearances: payload.appearances || [],
+                speaker_hints: payload.speaker_hints || [],
+                deepgram_config: payload.deepgram_config || {},
+                jurisdiction_type: meta.jurisdiction_type || 'texas_state',
+                location_type: meta.location_type || 'unknown',
+                detected_types: meta.detected_types || [],
+                warnings: meta.warnings || [],
+                field_sources: meta.field_sources || {},
+            };
+        }
+
+        function collectStage1KeytermEntries() {
+            const rows = [];
+            const seen = new Set();
+            const add = (term, boost, category, source) => {
+                if (!term) return;
+                const clean = String(term).trim();
+                if (!clean) return;
+                const key = clean.toLowerCase();
+                if (seen.has(key)) return;
+                seen.add(key);
+                rows.push({
+                    term: clean,
+                    boost: Number(boost || 1.0),
+                    category: category || 'Term',
+                    source: normalizeStage1KeytermSource(source),
+                });
+            };
+
+            (state.stage1.keytermEntries || []).forEach(kt => {
+                add(kt.term, kt.boost, kt.category, kt.source);
+            });
+            add(state.caseInfo.deponent, 1.5, 'Deponent', 'manual');
+            add(state.caseInfo.csrName, 1.0, 'Reporter', 'manual');
+            add(state.caseInfo.custodialName, 1.2, 'Attorney', 'manual');
+            add(state.caseInfo.requestingParty, 1.0, 'Firm', 'manual');
+            return rows;
+        }
+
+        async function persistStage1ArtifactsIfBound(reason) {
+            if (!window.api || !state.caseId || !state.sessionId) return null;
+            state.stage1.rawIntakeNotes = (document.getElementById('rawIntakeNotes') || {}).value || state.stage1.rawIntakeNotes;
+            state.stage1.keytermEntries = collectStage1KeytermEntries();
+            try {
+                const result = await window.api.syncStage1Artifacts(state);
+                if (result && result.keyterms) {
+                    state.stage1.keytermEntries = result.keyterms;
+                }
+                if (result && result.parser_metadata) {
+                    state.stage1.parserMetadata = result.parser_metadata;
+                }
+                console.info('[DEPO-PRO] Stage 1 artifacts synchronized', {
+                    reason: reason,
+                    caseId: state.caseId,
+                    sessionId: state.sessionId,
+                    keytermCount: (state.stage1.keytermEntries || []).length,
+                });
+                return result;
+            } catch (err) {
+                console.warn('[DEPO-PRO] Stage 1 artifact sync failed', err);
+                showToast(`Stage 1 sync failed: ${err.message}`, "amber");
+                return null;
+            }
+        }
+
+        function mergeStage1KeytermEntries(nextEntries) {
+            const merged = [];
+            const seen = new Set();
+            [...(state.stage1.keytermEntries || []), ...(nextEntries || [])].forEach(kt => {
+                if (!kt || !kt.term) return;
+                const key = String(kt.term).trim().toLowerCase();
+                if (!key || seen.has(key)) return;
+                seen.add(key);
+                merged.push({
+                    term: kt.term,
+                    boost: Number(kt.boost || 1.0),
+                    category: kt.category || 'Term',
+                    source: normalizeStage1KeytermSource(kt.source),
+                });
+            });
+            state.stage1.keytermEntries = merged;
+        }
+
+        function applyParsedStage1Payload(payload) {
+            const nextMeta = buildStage1ParserMetadata(payload);
+            state.stage1.parserMetadata = {
+                ...state.stage1.parserMetadata,
+                ...nextMeta,
+                appearances: (nextMeta.appearances && nextMeta.appearances.length)
+                    ? nextMeta.appearances
+                    : state.stage1.parserMetadata.appearances,
+                speaker_hints: (nextMeta.speaker_hints && nextMeta.speaker_hints.length)
+                    ? nextMeta.speaker_hints
+                    : state.stage1.parserMetadata.speaker_hints,
+                deepgram_config: Object.keys(nextMeta.deepgram_config || {}).length
+                    ? nextMeta.deepgram_config
+                    : state.stage1.parserMetadata.deepgram_config,
+            };
+            mergeStage1KeytermEntries(payload.keyterms || []);
+        }
+
         function validateUFMField(inputEl, label) {
             const val = inputEl.value.trim();
             const badge = inputEl.parentElement.querySelector('.ufm-val-badge');
@@ -91,6 +207,7 @@
                 showToast("Intake notes workspace is empty. Paste scheduling notes first.", "red");
                 return;
             }
+            setRawIntakeNotesState(rawNotes);
 
             showToast("Parsing pasted notes...", "cyan");
             addProvenanceRecord("Text Parser", "Parsing pasted intake notes.", "user");
@@ -114,6 +231,7 @@
             }
 
             // Apply parsed fields to the UFM form
+            applyParsedStage1Payload(payload);
             const fields = payload.fields || {};
             let populated = 0;
             for (const [id, value] of Object.entries(fields)) {
@@ -127,21 +245,11 @@
                 }
             }
 
-            // Mirror parsed keyterms into corrections memory + UFM dictionary
-            const keyterms = payload.keyterms || [];
-            keyterms.forEach(kt => {
-                state.correctionsMemory.push({
-                    original: kt.term.toLowerCase(),
-                    replacement: kt.term,
-                    scope: "case",
-                    category: kt.category || "Term",
-                    boost: kt.boost || 1.0,
-                });
-            });
-
             renderAllStateComponents();
             renderUFMTermsTable();
+            await persistStage1ArtifactsIfBound('text-parser');
 
+            const keyterms = payload.keyterms || [];
             if (populated === 0 && keyterms.length === 0) {
                 showToast(
                     "No fields recognized. Use labels like 'Cause No:', 'Deponent:', 'Court Reporter:'.",
@@ -193,6 +301,7 @@
             }
 
             // Apply the parsed fields to the UFM form
+            applyParsedStage1Payload(payload);
             const fields = payload.fields || {};
             let populated = 0;
             for (const [id, value] of Object.entries(fields)) {
@@ -206,21 +315,11 @@
                 }
             }
 
-            // Mirror parsed keyterms into the corrections memory + UFM dictionary
-            const keyterms = payload.keyterms || [];
-            keyterms.forEach(kt => {
-                state.correctionsMemory.push({
-                    original: kt.term.toLowerCase(),
-                    replacement: kt.term,
-                    scope: "case",
-                    category: kt.category || "Term",
-                    boost: kt.boost || 1.0,
-                });
-            });
-
             renderAllStateComponents();
             renderUFMTermsTable();
+            await persistStage1ArtifactsIfBound('nod-parser');
 
+            const keyterms = payload.keyterms || [];
             const detected = (payload.metadata && payload.metadata.detected_types) || [];
             document.getElementById('nodLabel').innerText = `Parsed: ${file.name}`;
             showToast(
@@ -284,28 +383,7 @@
             const countEl = document.getElementById('ufmTermsCount');
             if (!tbody) return;
 
-            const rows = [];
-            const seenTerms = new Set();
-            const addRow = (term, category, source, boost) => {
-                if (!term) return;
-                const key = term.trim().toLowerCase();
-                if (seenTerms.has(key)) return;
-                seenTerms.add(key);
-                rows.push({ term, category, source, boost });
-            };
-
-            if (state.caseInfo.deponent) addRow(state.caseInfo.deponent, 'Deponent', 'Notice parser', 1.5);
-            if (state.caseInfo.csrName) addRow(state.caseInfo.csrName, 'Reporter', 'Notice parser', 1.0);
-            if (state.caseInfo.custodialName) addRow(state.caseInfo.custodialName, 'Attorney', 'Notice parser', 1.2);
-            if (state.caseInfo.requestingParty) addRow(state.caseInfo.requestingParty, 'Firm', 'Notice parser', 1.0);
-            (state.correctionsMemory || []).forEach(corr => {
-                addRow(
-                    corr.replacement,
-                    'Medical',
-                    corr.scope === 'global' ? 'Learned' : 'Notice parser',
-                    1.5
-                );
-            });
+            const rows = collectStage1KeytermEntries();
 
             tbody.innerHTML = "";
             if (rows.length === 0) {
@@ -331,6 +409,10 @@
             const summaryBadge = document.getElementById('validationSummaryBadge');
             if (summaryBadge.innerText.includes("INCOMPLETE")) {
                 showToast("Warning: Some mandatory UFM variables are blank. UFM generation may fail.", "amber");
+            }
+            if (!state.caseId || !state.sessionId) {
+                showToast("Save Stage 1 Intake before proceeding. A valid case and session are required.", "red");
+                return;
             }
             goToStage(2);
         }
@@ -378,25 +460,9 @@
         }
 
         function buildKeytermsPayload() {
-            const terms = [];
-            const seen = new Set();
-            const addTerm = (term, boost, source) => {
-                if (!term) return;
-                const key = term.trim().toLowerCase();
-                if (seen.has(key)) return;
-                seen.add(key);
-                terms.push({ term, boost, source });
-            };
-
-            if (state.caseInfo.deponent) addTerm(state.caseInfo.deponent, 1.5, 'notice_parser');
-            if (state.caseInfo.csrName) addTerm(state.caseInfo.csrName, 1.0, 'notice_parser');
-            if (state.caseInfo.custodialName) addTerm(state.caseInfo.custodialName, 1.2, 'notice_parser');
-            if (state.caseInfo.requestingParty) addTerm(state.caseInfo.requestingParty, 1.0, 'notice_parser');
-            (state.correctionsMemory || []).forEach(c => {
-                addTerm(c.replacement, 1.5, c.scope === 'global' ? 'learned' : 'notice_parser');
-            });
+            const terms = collectStage1KeytermEntries();
             return {
-                case_id: 'pending_phase_b',
+                case_id: state.caseId || null,
                 case_caption: state.caseInfo.caption || null,
                 cause_number: state.caseInfo.cause || null,
                 generated_at: new Date().toISOString(),
@@ -417,3 +483,4 @@ window.openKeyTermsJsonModal = openKeyTermsJsonModal;
 window.closeKeyTermsJsonModal = closeKeyTermsJsonModal;
 window.copyKeyTermsJson = copyKeyTermsJson;
 window.buildKeytermsPayload = buildKeytermsPayload;
+window.persistStage1ArtifactsIfBound = persistStage1ArtifactsIfBound;

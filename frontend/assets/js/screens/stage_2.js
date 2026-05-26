@@ -159,6 +159,10 @@ async function startSequentialIngestion() {
         showToast("API client unavailable — cannot reach the transcription backend.", "red");
         return;
     }
+    if (!state.caseId || !state.sessionId) {
+        showToast("Save Stage 1 Intake before transcript ingestion. A valid case and session are required.", "red");
+        return;
+    }
     if (state.fileQueue.length === 0 || state.isQueueProcessing) return;
 
     state.isQueueProcessing = true;
@@ -219,6 +223,7 @@ async function startSequentialIngestion() {
 
             const job = await window.api.uploadTranscriptFile(item.file, {
                 caseId: state.caseId || null,
+                sessionId: state.sessionId || null,
                 sequenceIndex: i,
             });
             item.jobId = job.job_id;
@@ -278,10 +283,10 @@ async function startSequentialIngestion() {
         return;
     }
 
-    showToast(`${completedJobIds.length} transcript(s) ingested. Loading workspace…`, "emerald");
+    showToast(`${completedJobIds.length} transcript(s) ingested. Loading Stage 3 workspace…`, "emerald");
     state.activeTranscriptJobIds = completedJobIds.slice();
     await loadTranscriptResultsIntoWorkspace(completedJobIds);
-    setTimeout(() => goToStage("2b"), 900);
+    setTimeout(() => goToStage(3), 900);
 }
 
 /**
@@ -328,7 +333,8 @@ function pollTranscriptJob(jobId, onUpdate) {
 /**
  * Load completed transcript jobs into state.transcriptLines so the
  * Stage 3 Workspace renders real testimony. Builds lines from the
- * canonical utterance objects; speaker labels come from the speaker map.
+ * canonical utterance objects; speaker labels come from the authoritative
+ * Stage 3 speaker map when one has been confirmed.
  */
 async function loadTranscriptResultsIntoWorkspace(jobIds) {
     const lines = [];
@@ -347,11 +353,16 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
         (content.speakers || []).forEach(s => {
             speakerNames[s.speaker_index] = s.assigned_name || s.speaker_label;
         });
+        console.info('[DEPO-PRO] Transcript diarization loaded', {
+            jobId: content.job.job_id,
+            speakerCount: (content.speakers || []).length,
+            participantCount: (content.participants || []).length,
+        });
 
         // Canonical participant directory: raw diarization index -> Q/A
-        // mode and confirmed name. Populated once the reporter completes
-        // the Speaker Mapping step. Until then every line is neutral
-        // colloquy -- the app no longer guesses Q/A from speaker index.
+        // mode and confirmed name. Populated by the Stage 3 Workspace.
+        // Until then every line is neutral colloquy -- the app never
+        // guesses Q/A from a raw speaker index.
         const qaByIndex = {};
         const nameByIndex = {};
         (content.participants || []).forEach(p => {
@@ -368,6 +379,7 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
             lines.push({
                 id: `job-divider-${content.job.job_id}`,
                 index: ++runningIndex,
+                jobId: null,
                 speaker: "SYSTEM INDEXER",
                 text: `======= MEDIA FILE: ${content.job.source_filename} =======`,
                 type: "text",
@@ -383,11 +395,16 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
                 index: ++runningIndex,
                 jobId: content.job.job_id,
                 speaker: nameByIndex[utt.speaker_index]
-                    || speakerNames[utt.speaker_index] || utt.speaker_label,
+                    || speakerNames[utt.speaker_index] || utt.speaker_label || `Speaker ${utt.speaker_index}`,
                 speakerIndex: utt.speaker_index,
                 text: utt.text,
+                rawText: utt.raw_text,
+                workingText: utt.working_text,
+                isWorkingOverride: !!utt.is_working_override,
+                workingSource: utt.working_source || '',
+                workingUpdatedAt: utt.working_updated_at || '',
                 // Q/A and colloquy come from the reporter-confirmed
-                // Speaker Mapping step -- never from a raw speaker index.
+                // Stage 3 speaker map -- never from a raw speaker index.
                 type: qaByIndex[utt.speaker_index] || "colloquy",
                 confidence: utt.avg_confidence != null ? utt.avg_confidence : 0.95,
                 hasSuggestion: false,
@@ -400,14 +417,20 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
     if (lines.length > 0) {
         state.transcriptLines = lines;
         state.focusedLineId = lines[0].id;
+        if (state.workspaceSave) {
+            state.workspaceSave.dirty = false;
+            state.workspaceSave.pending = false;
+            state.workspaceSave.saving = false;
+            state.workspaceSave.lastError = null;
+            state.workspaceSave.lastSavedAt = new Date().toISOString();
+        }
         if (typeof compileAndRenderTranscript === "function") compileAndRenderTranscript();
+        if (typeof renderWorkspaceSaveStatus === "function") renderWorkspaceSaveStatus();
         if (typeof updateStatsBar === "function") updateStatsBar();
-        // Bind the Workspace to the first job so its AI review queue
-        // knows which job it operates on. Speaker assignment is done on
-        // Step 2B. (Single-job batches are the common case; multi-job
-        // uses job 1.)
+        // Bind the Workspace to the first job so its Stage 3 review
+        // controls and AI queue know which transcript is active.
         if (typeof loadWorkspaceJobContext === "function" && jobIds.length > 0) {
-            loadWorkspaceJobContext(jobIds[0]);
+            await loadWorkspaceJobContext(jobIds[0]);
         }
     }
 }
@@ -504,10 +527,15 @@ function updateEngineModeBadge(mode) {
 }
 
 async function viewTranscriptJob(jobId) {
+    if (typeof window.workspaceHasUnsavedChanges === "function"
+            && window.workspaceHasUnsavedChanges()
+            && !window.confirm("You have unsaved transcript changes. Open another transcript and discard unsaved edits?")) {
+        return;
+    }
     showToast("Loading transcript…", "indigo");
     state.activeTranscriptJobIds = [jobId];
     await loadTranscriptResultsIntoWorkspace([jobId]);
-    goToStage("2b");
+    goToStage(3);
 }
 
 async function deleteServerTranscriptJob(jobId) {

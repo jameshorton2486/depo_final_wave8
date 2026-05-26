@@ -5,6 +5,7 @@ Two snapshots with the same hash are guaranteed to export identically;
 a changed hash means the transcript state genuinely changed.
 
 The hash includes (docs/wave18_5_snapshot_versioning.md section 5):
+    authoritative exhibit records
     transcript render lines
     speaker mapping
     accepted AI suggestions
@@ -27,6 +28,8 @@ import json
 # from the state simply contributes its empty default -- the hash is
 # still deterministic.
 HASH_INPUT_KEYS: tuple[str, ...] = (
+    "working_utterances",
+    "exhibits",
     "render_lines",
     "speaker_mapping",
     "accepted_ai_suggestions",

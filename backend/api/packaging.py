@@ -16,9 +16,11 @@ import json
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, status
+from loguru import logger
 from pydantic import BaseModel
 
 from backend.packaging import (
+    ExhibitEvent,
     IndexInputs,
     assemble_package,
     certify_package,
@@ -32,7 +34,9 @@ from backend.packaging.package_repo import (
     update_package_state,
 )
 from backend.transcript import repository as trepo
+from backend.transcript import provenance as provenance_mod
 from backend.transcript_state import snapshot_repo
+from backend.services import intake_store
 
 router = APIRouter(prefix="/api/packages", tags=["packages"])
 
@@ -108,6 +112,8 @@ def _build_metadata_for_job(job_id: str, override: dict) -> dict:
 
     session_id = job.get("session_id")
     case_id = job.get("case_id")
+    intake = intake_store.read_stage1_record(case_id) if case_id else {}
+    parser_meta = intake.get("parser_metadata") or {}
 
     # --- Case -----------------------------------------------------------
     if case_id:
@@ -132,9 +138,13 @@ def _build_metadata_for_job(job_id: str, override: dict) -> dict:
 
             # Plaintiff / defendant names from parties
             _populate_party_names(meta, case_id)
+            if not meta.get("plaintiff_names") and not meta.get("defendant_names"):
+                _populate_parties_from_caption(meta)
 
             # Appearances and counsel of record from case_attorneys
             _populate_appearances(meta, case_id)
+            if not meta.get("appearances"):
+                _populate_appearances_from_intake(meta, parser_meta)
 
     # --- Session --------------------------------------------------------
     if session_id:
@@ -143,6 +153,7 @@ def _build_metadata_for_job(job_id: str, override: dict) -> dict:
             meta["witness_name"] = session.get("witness_name") or ""
             meta["party_at_instance"] = session.get("requesting_party_name") or ""
             meta["custodial_attorney"] = session.get("custodial_attorney_name") or ""
+            meta["location"] = session.get("location_address") or ""
 
             dt_start = _parse_iso_dt(session.get("scheduled_at") or "")
             if dt_start:
@@ -183,6 +194,17 @@ def _build_metadata_for_job(job_id: str, override: dict) -> dict:
                             meta["firm_address"] = addr
                         if csz:
                             meta["firm_city_state_zip"] = csz
+
+    if not meta.get("deposition_method"):
+        loc_type = parser_meta.get("location_type") or ""
+        method_map = {
+            "zoom": "Zoom videoconference",
+            "in_person": "stenographic",
+            "hybrid": "hybrid Zoom/in-person",
+            "phone": "telephone",
+        }
+        if loc_type in method_map:
+            meta["deposition_method"] = method_map[loc_type]
 
     # --- Job-specific deposition metadata --------------------------------
     depo = get_depo_meta(job_id)
@@ -233,6 +255,24 @@ def _populate_party_names(meta: dict, case_id: str) -> None:
         meta["defendant_names"] = ", ".join(defendants)
 
 
+def _populate_parties_from_caption(meta: dict) -> None:
+    caption = (meta.get("caption") or "").strip()
+    if not caption:
+        return
+    parts = None
+    for needle in (" vs. ", " VS. ", " v. ", " V. ", " vs ", " v "):
+        if needle in caption:
+            parts = caption.split(needle, 1)
+            break
+    if not parts or len(parts) != 2:
+        return
+    plaintiff, defendant = parts[0].strip(), parts[1].strip()
+    if plaintiff and not meta.get("plaintiff_names"):
+        meta["plaintiff_names"] = plaintiff
+    if defendant and not meta.get("defendant_names"):
+        meta["defendant_names"] = defendant
+
+
 def _populate_appearances(meta: dict, case_id: str) -> None:
     from backend.db.repository import get_connection
     with get_connection() as conn:
@@ -277,6 +317,32 @@ def _populate_appearances(meta: dict, case_id: str) -> None:
         meta["counsel_of_record"] = counsel
 
 
+def _populate_appearances_from_intake(meta: dict, parser_meta: dict) -> None:
+    appearances = []
+    counsel = []
+    for ap in parser_meta.get("appearances") or []:
+        side = str(ap.get("side") or "").lower()
+        party = "Plaintiff" if side == "plaintiff" else "Defendant" if side == "defendant" else ""
+        appearances.append({
+            "attorney": ap.get("name") or "",
+            "sbot_no": ap.get("bar_number") or "",
+            "firm": ap.get("firm") or "",
+            "address": "",
+            "city_state_zip": "",
+            "phone": "",
+            "party": party,
+            "role": side,
+        })
+        counsel.append({
+            "name": ap.get("name") or "",
+            "role": f"Attorney for {party}" if party else "Attorney",
+        })
+    if appearances and not meta.get("appearances"):
+        meta["appearances"] = appearances
+    if counsel and not meta.get("counsel_of_record"):
+        meta["counsel_of_record"] = counsel
+
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -295,21 +361,80 @@ class CertifyRequest(BaseModel):
 # Helper: build a paginated document for a job
 # ---------------------------------------------------------------------------
 
-def _build_paginated_for_job(job_id: str, job_row: dict):
-    """Return a PaginatedDocument for a job's current working state.
+def _build_paginated_and_index_inputs_from_snapshot_state(snapshot_state: dict):
+    """Return frozen pagination + index inputs from locked snapshot state.
 
-    Runs the same Stage S pipeline as the export-preview endpoint so the
-    packaging engine receives the same body the exporter would write.
-    Returns None when the transcript body is empty (no utterances).
+    Certification and packaging must freeze from the snapshot state, not
+    from the current mutable live database rows.
     """
     from backend.stage_s.renderer import render_stage_s
     from backend.transcript.export_render import render_export_with_layout
 
-    utterances = trepo.get_utterances(job_id) or []
-    participants = trepo.get_participants(job_id) or []
+    working = snapshot_state.get("working_utterances") or []
+    utterances = [
+        {
+            "utterance_id": u.get("utterance_id"),
+            "utterance_index": u.get("utterance_index"),
+            "speaker_index": u.get("speaker_index"),
+            "speaker_label": u.get("speaker_label") or "",
+            "start_time": u.get("start_time") or 0.0,
+            "end_time": u.get("end_time") or 0.0,
+            "text": u.get("text") or u.get("raw_text") or "",
+            "avg_confidence": None,
+        }
+        for u in working
+    ]
+    try:
+        from backend.corrections.regex_rules import RegexRule, apply_regex_rules
+
+        rules = [
+            RegexRule(
+                rule_id=r.get("rule_id", ""),
+                find_pattern=r.get("find_pattern", ""),
+                replace_with=r.get("replace_with", ""),
+                rule_order=r.get("rule_order", 0),
+                enabled=r.get("enabled", True),
+                description=r.get("description", ""),
+            )
+            for r in (snapshot_state.get("regex_rule_state") or [])
+        ]
+        if rules:
+            utterances, _ = apply_regex_rules(utterances, rules)
+    except Exception:
+        pass
+    try:
+        from backend.lexicon.merge import merge_from_job_config
+        from backend.lexicon.stage_x import apply_stage_x
+
+        lexicon_cfg = snapshot_state.get("lexicon_state") or {}
+        lexicon = merge_from_job_config({
+            "confirmed_spellings": lexicon_cfg.get("confirmed_spellings") or {},
+            "intake_keyterms": lexicon_cfg.get("intake_keyterms") or [],
+        })
+        if len(lexicon) > 0:
+            utterances, _ = apply_stage_x(utterances, lexicon)
+    except Exception:
+        pass
+    participants = [
+        {
+            "participant_id": p.get("participant_id"),
+            "name": p.get("name"),
+            "role": p.get("role") or "other",
+            "speaker_indices": p.get("speaker_indices") or [],
+            "sort_order": idx,
+            "name_source": p.get("name_source"),
+            "honorific": p.get("honorific"),
+        }
+        for idx, p in enumerate(snapshot_state.get("speaker_mapping") or [])
+    ]
 
     # Stage S structural render
     stage_s = render_stage_s(utterances, participants)
+    utterance_to_render_line: dict[str, str] = {}
+    for ln in stage_s.lines:
+        for utt_id in ln.source_utterance_ids or []:
+            if utt_id and utt_id not in utterance_to_render_line:
+                utterance_to_render_line[utt_id] = ln.line_id
 
     # Map to working line dicts (same mapping as export-preview)
     working: list[dict] = []
@@ -331,7 +456,18 @@ def _build_paginated_for_job(job_id: str, job_row: dict):
         })
 
     _, paginated = render_export_with_layout(working)
-    return paginated
+
+    exhibit_events = []
+    for ex in snapshot_state.get("exhibits") or []:
+        render_line_id = utterance_to_render_line.get(ex.get("anchor_utterance_id") or "")
+        exhibit_events.append(
+            ExhibitEvent(
+                exhibit_number=str(ex.get("exhibit_number") or ""),
+                exhibit_title=str(ex.get("exhibit_title") or ""),
+                render_line_id=render_line_id or "",
+            )
+        )
+    return paginated, IndexInputs(exhibit_events=exhibit_events)
 
 
 # ---------------------------------------------------------------------------
@@ -368,15 +504,20 @@ def assemble(job_id: str, payload: AssembleRequest) -> dict:
                     "Lock the snapshot first (POST /api/snapshots/{id}/lock) "
                     "before assembling a package."))
 
-    job_row = trepo.get_job(job_id) or {}
-
-    # Build the paginated body from the job's working lines.
+    # Build the paginated body from the LOCKED snapshot state.
     try:
-        paginated = _build_paginated_for_job(job_id, job_row)
+        paginated, index_inputs = _build_paginated_and_index_inputs_from_snapshot_state(
+            snap.state or {}
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to paginate transcript for packaging: {exc}")
+    logger.info(
+        f"Packaging assemble for {job_id} frozen to snapshot {snap.snapshot_id} "
+        f"(locked={snap.locked}, hash={snap.state_hash[:12]}, "
+        f"exhibits={len(index_inputs.exhibit_events)})"
+    )
 
     # Auto-populate metadata from DB; explicit payload fields win.
     metadata = _build_metadata_for_job(job_id, payload.metadata or {})
@@ -386,13 +527,34 @@ def assemble(job_id: str, payload: AssembleRequest) -> dict:
         snapshot_id=snap.snapshot_id,
         state_hash=snap.state_hash,
         metadata=metadata,
-        index_inputs=IndexInputs(),  # empty by default; caller may extend
+        index_inputs=index_inputs,
         paginated_document=paginated,
         freelance=payload.freelance,
     )
 
     # Persist and return.
     summary = save_package(package, job_id)
+    try:
+        provenance_mod.record_event(
+            job_id,
+            event_type="package_assembled",
+            title="Certified Package Draft Assembled",
+            detail=(
+                f"Draft package {summary.get('package_id') or package.package_id} "
+                f"assembled from locked snapshot {snap.snapshot_id}."
+            ),
+            actor_type="system",
+            source="packaging",
+            metadata={
+                "snapshot_id": snap.snapshot_id,
+                "state_hash": snap.state_hash,
+                "included_exhibits": package.manifest.included_exhibits or [],
+            },
+            related_snapshot_id=snap.snapshot_id,
+            related_package_id=summary.get("package_id") or package.package_id,
+        )
+    except Exception as exc:
+        logger.warning(f"package assemble provenance record failed: {exc}")
     return {
         **summary,
         "generation_report": package.generation_report.to_dict(),
@@ -463,6 +625,54 @@ def certify(package_id: str, payload: CertifyRequest) -> dict:
     update_package_state(package_id, "CERTIFIED", certified)
 
     result = get_package(package_id) or {}
+    prior_certified = [
+        pkg for pkg in list_packages(job_id)
+        if pkg["package_state"] == "CERTIFIED" and pkg["package_id"] != package_id
+    ]
+
+    try:
+        provenance_mod.record_event(
+            job_id,
+            event_type="certification_frozen",
+            title="Certification Frozen",
+            detail=f"Package {package_id} certified from locked snapshot.",
+            actor_type="system",
+            source="packaging",
+            metadata={
+                "snapshot_id": result.get("snapshot_id") or summary.get("snapshot_id"),
+                "manifest_hash": result.get("manifest_hash") or "",
+                "included_exhibits": (
+                    ((result.get("package") or {}).get("manifest") or {}).get("included_exhibits") or []
+                ),
+                "prior_certified_package_ids": [pkg["package_id"] for pkg in prior_certified],
+            },
+            related_snapshot_id=result.get("snapshot_id") or summary.get("snapshot_id") or "",
+            related_package_id=package_id,
+        )
+        if prior_certified:
+            provenance_mod.record_event(
+                job_id,
+                event_type="recertification_created",
+                title="Recertification Created",
+                detail=(
+                    f"Certified new package {package_id} while preserving "
+                    f"{len(prior_certified)} prior certified package(s)."
+                ),
+                actor_type="system",
+                source="packaging",
+                metadata={
+                    "new_package_id": package_id,
+                    "prior_certified_package_ids": [pkg["package_id"] for pkg in prior_certified],
+                },
+                related_snapshot_id=result.get("snapshot_id") or summary.get("snapshot_id") or "",
+                related_package_id=package_id,
+            )
+    except Exception as exc:
+        logger.warning(f"certification provenance record failed: {exc}")
+    logger.info(
+        f"Package {package_id} certified from snapshot "
+        f"{result.get('snapshot_id') or summary.get('snapshot_id')}"
+    )
     return {
         **result,
         "certified": True,

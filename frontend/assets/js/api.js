@@ -121,6 +121,35 @@
         };
     }
 
+    function buildStage1SyncPayload(stateObj) {
+        const caseInfo = stateObj.caseInfo || {};
+        const stage1 = stateObj.stage1 || {};
+        return {
+            case_id: stateObj.caseId,
+            session_id: stateObj.sessionId,
+            reporter_name: (caseInfo.csrName || '').trim() || null,
+            ufmCause: caseInfo.cause || null,
+            ufmStyle: caseInfo.caption || null,
+            ufmCourt: caseInfo.court || null,
+            ufmCounty: caseInfo.county || null,
+            ufmState: caseInfo.state || 'Texas',
+            jurisdiction_type: (stage1.parserMetadata && stage1.parserMetadata.jurisdiction_type) || 'texas_state',
+            ufmWitness: caseInfo.deponent || null,
+            ufmDate: caseInfo.date || null,
+            ufmStartTime: caseInfo.startTime || null,
+            ufmEndTime: caseInfo.endTime || null,
+            ufmAddress: caseInfo.address || null,
+            location_type: (stage1.parserMetadata && stage1.parserMetadata.location_type) || 'unknown',
+            ufmCSRName: caseInfo.csrName || null,
+            ufmCSRLicense: caseInfo.csrLicense || null,
+            ufmFirmReg: caseInfo.firmReg || null,
+            ufmCSRCertExp: caseInfo.csrCertExp || null,
+            raw_intake_notes: stage1.rawIntakeNotes || '',
+            parser_metadata: stage1.parserMetadata || {},
+            keyterms: stage1.keytermEntries || [],
+        };
+    }
+
     // ====================================================================
     // Generic HTTP helper
     // ====================================================================
@@ -238,6 +267,7 @@
         reporterRowToCaseInfoPatch,
         canSaveSession,
         canSaveReporter,
+        buildStage1SyncPayload,
 
         // Cases
         listCases() {
@@ -287,6 +317,14 @@
             return _fetch('PUT', `/reporters/${encodeURIComponent(reporterId)}`, caseInfoToReporterPayload(caseInfo));
         },
 
+        // Stage 1 authoritative artifact sync
+        syncStage1Artifacts(stateObj) {
+            return _fetch('POST', '/intake/workspace', buildStage1SyncPayload(stateObj));
+        },
+        getStage1Artifacts(caseId) {
+            return _fetch('GET', `/intake/cases/${encodeURIComponent(caseId)}`);
+        },
+
         // Transcripts (Stage 2)
         uploadTranscriptFile,
         listTranscriptJobs(caseId) {
@@ -299,6 +337,32 @@
         getTranscriptContent(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/content`);
         },
+        listTranscriptExhibits(jobId) {
+            return _fetch('GET', `/exhibits/jobs/${encodeURIComponent(jobId)}`);
+        },
+        createTranscriptExhibit(jobId, payload) {
+            return _fetch('POST', `/exhibits/jobs/${encodeURIComponent(jobId)}`, payload || {});
+        },
+        updateTranscriptExhibit(exhibitId, payload) {
+            return _fetch('PUT', `/exhibits/${encodeURIComponent(exhibitId)}`, payload || {});
+        },
+        deleteTranscriptExhibit(exhibitId) {
+            return _fetch('DELETE', `/exhibits/${encodeURIComponent(exhibitId)}`);
+        },
+        saveWorkingTranscript(jobId, utterances, source) {
+            return _fetch('PUT', `/transcripts/jobs/${encodeURIComponent(jobId)}/working-transcript`, {
+                utterances: utterances || [],
+                source: source || 'stage3_workspace',
+            });
+        },
+        listTranscriptProvenance(jobId) {
+            return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/provenance`);
+        },
+        recordTranscriptProvenance(jobId, payload) {
+            return _fetch('POST', `/transcripts/jobs/${encodeURIComponent(jobId)}/provenance`, payload || {});
+        },
+        // Stage 3 Workspace is the authoritative speaker-mapping UI.
+        // These APIs remain under /transcripts for compatibility.
         getSpeakerMapping(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/speaker-mapping`);
         },
@@ -317,12 +381,13 @@
             // Wave 12: export preview for a transient unsaved transcript.
             return _fetch('POST', '/transcripts/export-preview/fallback', payload);
         },
-        exportTranscript(jobId, fmt, destination, explicitPath) {
+        exportTranscript(jobId, fmt, destination, explicitPath, snapshotId) {
             // Wave 18: backend renders and writes a real file to disk.
             return _fetch('POST', `/transcripts/jobs/${encodeURIComponent(jobId)}/export`, {
                 fmt: fmt,
                 destination: destination,
                 explicit_path: explicitPath || null,
+                snapshot_id: snapshotId || null,
             });
         },
         // --- AI review layer (Wave 15b / 16) ------------------------
@@ -343,6 +408,9 @@
         approveAISuggestion(suggestionId) {
             return _fetch('POST', `/ai-review/suggestions/${encodeURIComponent(suggestionId)}/approve`);
         },
+        applyAISuggestion(suggestionId) {
+            return _fetch('POST', `/ai-review/suggestions/${encodeURIComponent(suggestionId)}/apply`);
+        },
         rejectAISuggestion(suggestionId) {
             return _fetch('POST', `/ai-review/suggestions/${encodeURIComponent(suggestionId)}/reject`);
         },
@@ -362,12 +430,28 @@
         },
 
         // Snapshots (packaging workflow — Wave 18.5)
-        createSnapshot(jobId, category) {
+        createSnapshot(jobId, category, note, createdBy) {
             return _fetch('POST', `/snapshots/jobs/${encodeURIComponent(jobId)}`,
-                          { category: category || 'CERTIFIED' });
+                          {
+                              category: category || 'CERTIFIED',
+                              note: note || '',
+                              created_by: createdBy || '',
+                          });
+        },
+        listSnapshots(jobId) {
+            return _fetch('GET', `/snapshots/jobs/${encodeURIComponent(jobId)}`);
+        },
+        getSnapshot(snapshotId) {
+            return _fetch('GET', `/snapshots/${encodeURIComponent(snapshotId)}`);
         },
         lockSnapshot(snapshotId) {
             return _fetch('POST', `/snapshots/${encodeURIComponent(snapshotId)}/lock`);
+        },
+        rollbackSnapshot(jobId, snapshotId, createdBy) {
+            return _fetch('POST', `/snapshots/jobs/${encodeURIComponent(jobId)}/rollback`, {
+                snapshot_id: snapshotId,
+                created_by: createdBy || 'workspace',
+            });
         },
 
         // Packages (Wave 20)
@@ -377,6 +461,12 @@
                 metadata: metadata || {},
                 freelance: true,
             });
+        },
+        listPackages(jobId) {
+            return _fetch('GET', `/packages/jobs/${encodeURIComponent(jobId)}`);
+        },
+        getPackage(packageId) {
+            return _fetch('GET', `/packages/${encodeURIComponent(packageId)}`);
         },
         certifyPackage(packageId, metadata) {
             return _fetch('POST', `/packages/${encodeURIComponent(packageId)}/certify`,
