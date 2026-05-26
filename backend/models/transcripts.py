@@ -4,6 +4,7 @@ Response shapes for the Stage 2 transcripts engine. Request bodies for
 the upload endpoint arrive as multipart form data, so they are declared
 inline in the router rather than here.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -21,6 +22,7 @@ class TranscriptJob(BaseModel):
     job_id: str
     case_id: Optional[str] = None
     session_id: Optional[str] = None
+    case_bound: bool = False
     source_filename: str
     source_size_bytes: int
     media_kind: str
@@ -45,6 +47,10 @@ class TranscriptJob(BaseModel):
 class TranscriptJobList(BaseModel):
     jobs: list[TranscriptJob]
     count: int
+
+
+class TranscriptJobUpdateRequest(BaseModel):
+    case_id: Optional[str] = None
 
 
 # --------------------------------------------------------------------
@@ -107,8 +113,8 @@ class TranscriptParticipant(BaseModel):
     is_prefill: int = 0
     sort_order: int = 0
     # Wave 11
-    name_source: Optional[str] = None   # prefill_deterministic | ai_suggested | user_confirmed
-    honorific: Optional[str] = None     # MR | MS | MRS | DR | None
+    name_source: Optional[str] = None  # prefill_deterministic | ai_suggested | user_confirmed
+    honorific: Optional[str] = None  # MR | MS | MRS | DR | None
 
 
 class TranscriptExhibit(BaseModel):
@@ -188,7 +194,7 @@ class SpeakerMappingApplyResponse(BaseModel):
 
     job_id: str
     participant_count: int
-    lines: list[dict]          # rendered WorkingLine dicts
+    lines: list[dict]  # rendered WorkingLine dicts
     unmapped_cluster_count: int
     correction_engine_ran: bool
 

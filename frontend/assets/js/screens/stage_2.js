@@ -468,7 +468,35 @@ function renderServerTranscriptJobs() {
     updateEngineModeBadge(usedFallback ? "fallback" : "deepgram");
 
     list.innerHTML = "";
-    jobs.forEach(job => {
+    const currentCaseId = state.caseId || '';
+    const currentCaseJobs = currentCaseId
+        ? jobs.filter(job => job.case_id === currentCaseId)
+        : [];
+    const unboundJobs = jobs.filter(job => !job.case_bound);
+    const otherJobs = jobs.filter(job => {
+        if (!job.case_bound) return false;
+        if (currentCaseId && job.case_id === currentCaseId) return false;
+        return true;
+    });
+
+    const groups = [];
+    if (currentCaseJobs.length > 0) groups.push({ title: "Current Case", jobs: currentCaseJobs, tone: "text-emerald-400" });
+    if (unboundJobs.length > 0) groups.push({ title: "Unbound Jobs", jobs: unboundJobs, tone: "text-amber-400" });
+    if (otherJobs.length > 0) groups.push({ title: "Other Cases", jobs: otherJobs, tone: "text-slate-400" });
+    if (groups.length === 0) groups.push({ title: "All Jobs", jobs, tone: "text-slate-400" });
+
+    groups.forEach(group => {
+        const header = document.createElement('div');
+        header.className = "pt-3 first:pt-0";
+        header.innerHTML = `
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-[10px] uppercase tracking-[0.18em] font-bold ${group.tone}">${group.title}</p>
+                <span class="text-[10px] text-slate-500 font-mono">${group.jobs.length}</span>
+            </div>
+        `;
+        list.appendChild(header);
+
+        group.jobs.forEach(job => {
         const statusStyles = {
             completed: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
             failed: "text-red-400 bg-red-500/10 border-red-500/20",
@@ -478,15 +506,19 @@ function renderServerTranscriptJobs() {
         const done = job.status === "completed";
         const dur = job.duration_seconds ? `${Math.round(job.duration_seconds)}s` : "—";
         const conf = job.avg_confidence != null ? `${Math.round(job.avg_confidence * 100)}%` : "—";
+        const showBind = !job.case_bound && !!currentCaseId;
 
         const card = document.createElement('div');
-        card.className = "bg-slate-950 border border-slate-850 rounded-xl p-3 flex flex-col gap-2";
+        card.className = "bg-slate-950 border border-slate-850 rounded-xl p-3 flex flex-col gap-2 mb-2";
         card.innerHTML = `
             <div class="flex items-center justify-between gap-3">
                 <div class="min-w-0">
                     <p class="font-mono text-xs text-white truncate">${job.source_filename}</p>
                     <p class="text-[10px] text-slate-500 font-mono">
                         ${job.word_count} words · ${job.speaker_count} speakers · ${dur} · conf ${conf}
+                    </p>
+                    <p class="text-[10px] ${job.case_bound ? 'text-emerald-500' : 'text-amber-400'} font-semibold uppercase tracking-wide mt-1">
+                        ${job.case_bound ? `Bound to case ${job.case_id}` : 'Unbound transcript job'}
                     </p>
                 </div>
                 <span class="px-2 py-0.5 rounded text-[9px] font-semibold uppercase border ${style} shrink-0">${job.status}</span>
@@ -501,6 +533,11 @@ function renderServerTranscriptJobs() {
                     class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-semibold transition-all">
                     Open in Workspace
                 </button>
+                ${showBind ? `
+                <button onclick="bindTranscriptJobToCurrentCase('${job.job_id}')"
+                    class="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[10px] font-semibold transition-all">
+                    Bind to Current Case
+                </button>` : ''}
                 <button onclick="deleteServerTranscriptJob('${job.job_id}')"
                     class="px-2 py-1 text-slate-500 hover:text-red-400 text-[10px] font-semibold transition-all">
                     Delete
@@ -508,7 +545,23 @@ function renderServerTranscriptJobs() {
             </div>
         `;
         list.appendChild(card);
+        });
     });
+}
+
+async function bindTranscriptJobToCurrentCase(jobId) {
+    if (!window.api || !state.caseId) {
+        showToast("Load a case in Stage 1 before binding transcript jobs.", "amber");
+        return;
+    }
+    try {
+        await window.api.updateTranscriptJob(jobId, { case_id: state.caseId });
+        showToast("Transcript job bound to the current case.", "emerald");
+        await refreshServerTranscriptJobs();
+    } catch (err) {
+        console.error("Could not bind transcript job to case:", err);
+        showToast(err.message || "Could not bind transcript job.", "red");
+    }
 }
 
 function updateEngineModeBadge(mode) {
@@ -793,6 +846,7 @@ window.pollTranscriptJob = pollTranscriptJob;
 window.loadTranscriptResultsIntoWorkspace = loadTranscriptResultsIntoWorkspace;
 window.refreshServerTranscriptJobs = refreshServerTranscriptJobs;
 window.renderServerTranscriptJobs = renderServerTranscriptJobs;
+window.bindTranscriptJobToCurrentCase = bindTranscriptJobToCurrentCase;
 window.viewTranscriptJob = viewTranscriptJob;
 window.deleteServerTranscriptJob = deleteServerTranscriptJob;
 window.executeReadbackSearch = executeReadbackSearch;

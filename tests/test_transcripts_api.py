@@ -4,26 +4,33 @@ These run against the offline fallback transcriber, so they need no
 Deepgram API key and no network. The temp_db fixture (conftest.py)
 redirects SQLite and the data root into a tmp_path.
 """
+
 from __future__ import annotations
 
 
 def _create_bound_case_session(client):
-    case = client.post("/api/cases", json={
-        "case_number_value": "2024-CI-28593",
-        "caption_full": "SARAH JENKINS vs. NEXUS PHARMA INC.",
-        "judicial_district": "101st Judicial District",
-        "county": "Dallas County",
-        "state": "Texas",
-    }).json()
-    session = client.post("/api/sessions", json={
-        "case_id": case["case_id"],
-        "scheduled_at": "2026-05-19T10:00:00-05:00",
-        "scheduled_end_at": "2026-05-19T12:30:00-05:00",
-        "witness_name": "Dr. Donald Leifer",
-        "location_address": "201 Main Street, Fort Worth, TX 76102",
-        "custodial_attorney_name": "Ms. Elizabeth R. Flora, Esq.",
-        "requesting_party_name": "Vance & Partners LLP",
-    }).json()
+    case = client.post(
+        "/api/cases",
+        json={
+            "case_number_value": "2024-CI-28593",
+            "caption_full": "SARAH JENKINS vs. NEXUS PHARMA INC.",
+            "judicial_district": "101st Judicial District",
+            "county": "Dallas County",
+            "state": "Texas",
+        },
+    ).json()
+    session = client.post(
+        "/api/sessions",
+        json={
+            "case_id": case["case_id"],
+            "scheduled_at": "2026-05-19T10:00:00-05:00",
+            "scheduled_end_at": "2026-05-19T12:30:00-05:00",
+            "witness_name": "Dr. Donald Leifer",
+            "location_address": "201 Main Street, Fort Worth, TX 76102",
+            "custodial_attorney_name": "Ms. Elizabeth R. Flora, Esq.",
+            "requesting_party_name": "Vance & Partners LLP",
+        },
+    ).json()
     return case, session
 
 
@@ -41,6 +48,12 @@ def _upload(client, filename="morning_session.mp3", seq=0, case_id=None, session
         data=data,
     )
     return res
+
+
+def _create_orphan_job(client, filename="legacy_orphan.mp3"):
+    from backend.transcript import repository as trepo
+
+    return trepo.create_job({"source_filename": filename})["job_id"]
 
 
 def test_upload_creates_and_processes_job(client):
@@ -126,25 +139,76 @@ def test_readback_empty_query_rejected(client):
 
 
 def test_jobs_list_and_case_filter(client, created_case):
-    session = client.post("/api/sessions", json={
-        "case_id": created_case["case_id"],
-        "scheduled_at": "2026-05-19T10:00:00-05:00",
-        "scheduled_end_at": "2026-05-19T12:30:00-05:00",
-        "witness_name": "Dr. Donald Leifer",
-    }).json()
-    _upload(client, filename="a.mp3", seq=0, case_id=created_case["case_id"], session_id=session["session_id"])
-    _upload(client, filename="b.mp3", seq=1, case_id=created_case["case_id"], session_id=session["session_id"])
-    _upload(client, filename="orphan.mp3", seq=0)
+    session = client.post(
+        "/api/sessions",
+        json={
+            "case_id": created_case["case_id"],
+            "scheduled_at": "2026-05-19T10:00:00-05:00",
+            "scheduled_end_at": "2026-05-19T12:30:00-05:00",
+            "witness_name": "Dr. Donald Leifer",
+        },
+    ).json()
+    _upload(
+        client,
+        filename="a.mp3",
+        seq=0,
+        case_id=created_case["case_id"],
+        session_id=session["session_id"],
+    )
+    _upload(
+        client,
+        filename="b.mp3",
+        seq=1,
+        case_id=created_case["case_id"],
+        session_id=session["session_id"],
+    )
+    orphan_job_id = _create_orphan_job(client, filename="orphan.mp3")
 
     all_jobs = client.get("/api/transcripts/jobs").json()
     assert all_jobs["count"] == 3
+    orphan = next(job for job in all_jobs["jobs"] if job["job_id"] == orphan_job_id)
+    assert orphan["case_bound"] is False
 
-    case_jobs = client.get(
-        f"/api/transcripts/jobs?case_id={created_case['case_id']}"
-    ).json()
+    case_jobs = client.get(f"/api/transcripts/jobs?case_id={created_case['case_id']}").json()
     assert case_jobs["count"] == 2
     # Case-scoped list is ordered by sequence_index.
     assert [j["source_filename"] for j in case_jobs["jobs"]] == ["a.mp3", "b.mp3"]
+
+
+def test_update_job_binds_orphan_to_case_and_records_provenance(client, created_case):
+    job_id = _create_orphan_job(client, filename="legacy_unbound.mp3")
+
+    res = client.put(
+        f"/api/transcripts/jobs/{job_id}",
+        json={"case_id": created_case["case_id"]},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["case_id"] == created_case["case_id"]
+    assert body["case_bound"] is True
+
+    listed = client.get("/api/transcripts/jobs").json()["jobs"]
+    rebound = next(job for job in listed if job["job_id"] == job_id)
+    assert rebound["case_bound"] is True
+
+    provenance = client.get(f"/api/transcripts/jobs/{job_id}/provenance").json()["events"]
+    assert any(ev["event_type"] == "job_case_bound" for ev in provenance)
+
+
+def test_update_job_unknown_job_404(client, created_case):
+    res = client.put(
+        "/api/transcripts/jobs/no-such-job",
+        json={"case_id": created_case["case_id"]},
+    )
+    assert res.status_code == 404
+
+
+def test_update_job_unknown_case_400(client, sample_job):
+    res = client.put(
+        f"/api/transcripts/jobs/{sample_job}",
+        json={"case_id": "no-such-case"},
+    )
+    assert res.status_code == 400
 
 
 def test_delete_job(client):
@@ -202,7 +266,9 @@ def test_save_working_transcript_persists_reload_and_packet(client):
     assert updated["working_updated_at"]
 
     packet = client.get(f"/api/transcripts/jobs/{job_id}/packet").json()
-    packet_utt = next(u for u in packet["utterances"] if u["utterance_id"] == target["utterance_id"])
+    packet_utt = next(
+        u for u in packet["utterances"] if u["utterance_id"] == target["utterance_id"]
+    )
     assert packet_utt["text"] == updated_text
 
 
@@ -226,8 +292,16 @@ def test_save_working_transcript_preserves_raw_immutability(client):
 
     from backend.transcript import repository as trepo
 
-    raw = next(u for u in trepo.get_utterances(job_id, layer="raw") if u["utterance_id"] == target["utterance_id"])
-    working = next(u for u in trepo.get_utterances(job_id, layer="working") if u["utterance_id"] == target["utterance_id"])
+    raw = next(
+        u
+        for u in trepo.get_utterances(job_id, layer="raw")
+        if u["utterance_id"] == target["utterance_id"]
+    )
+    working = next(
+        u
+        for u in trepo.get_utterances(job_id, layer="working")
+        if u["utterance_id"] == target["utterance_id"]
+    )
     assert raw["text"] == target["text"]
     assert working["text"] == updated_text
 
@@ -248,10 +322,7 @@ def test_export_preview_uses_latest_working_transcript(client, sample_job_with_c
     preview = client.get(f"/api/transcripts/jobs/{job_id}/export-preview")
     assert preview.status_code == 200
     text = "\n".join(
-        line["text"]
-        for page in preview.json()["pages"]
-        for line in page["lines"]
-        if line["text"]
+        line["text"] for page in preview.json()["pages"] for line in page["lines"] if line["text"]
     )
     assert "Yes, I remained on duty for that entire afternoon." in text
 
@@ -324,7 +395,9 @@ def test_exhibit_create_reload_and_delete(client, sample_job_with_content):
     assert relisted.json()["count"] == 0
 
 
-def test_exhibit_mutation_allowed_after_locked_snapshot_for_new_lineage(client, sample_job_with_content):
+def test_exhibit_mutation_allowed_after_locked_snapshot_for_new_lineage(
+    client, sample_job_with_content
+):
     job_id = sample_job_with_content
     snap = client.post(
         f"/api/snapshots/jobs/{job_id}",
@@ -346,7 +419,10 @@ def test_exhibit_mutation_allowed_after_locked_snapshot_for_new_lineage(client, 
         f"/api/transcripts/jobs/{job_id}/working-transcript",
         json={
             "utterances": [
-                {"utterance_id": "utt-1", "working_text": "Working transcript continues after certification."}
+                {
+                    "utterance_id": "utt-1",
+                    "working_text": "Working transcript continues after certification.",
+                }
             ]
         },
     )
@@ -378,7 +454,9 @@ def test_exhibit_anchor_survives_transcript_edits(client, sample_job_with_conten
     assert listed["exhibits"][0]["anchor_utterance_id"] == created["anchor_utterance_id"]
 
 
-def test_export_from_locked_snapshot_returns_certified_source(client, sample_job_with_content, tmp_path):
+def test_export_from_locked_snapshot_returns_certified_source(
+    client, sample_job_with_content, tmp_path
+):
     from backend.transcript import working_state
 
     job_id = sample_job_with_content
@@ -406,7 +484,10 @@ def test_export_from_locked_snapshot_returns_certified_source(client, sample_job
         f"/api/transcripts/jobs/{job_id}/working-transcript",
         json={
             "utterances": [
-                {"utterance_id": "utt-1", "working_text": "Live working transcript after certification lock."}
+                {
+                    "utterance_id": "utt-1",
+                    "working_text": "Live working transcript after certification lock.",
+                }
             ],
             "source": "test_suite",
         },
@@ -414,7 +495,12 @@ def test_export_from_locked_snapshot_returns_certified_source(client, sample_job
     assert follow_up.status_code == 200
     working_state.persist_working_transcript(
         job_id,
-        [{"utterance_id": "utt-1", "working_text": "Live working transcript after certification lock."}],
+        [
+            {
+                "utterance_id": "utt-1",
+                "working_text": "Live working transcript after certification lock.",
+            }
+        ],
         source="test_suite",
     )
     exported = client.post(
