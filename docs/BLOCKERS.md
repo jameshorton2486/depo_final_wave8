@@ -46,7 +46,7 @@ protected. Covered by `test_qa_tether_keeps_question_with_its_answer`.
 statutory wording (Tex. R. Civ. P. 203.2 / 203.3, UFM Figures 3, 4, 8)
 for the caption, appearances, and certificate pages.
 
-**Follow-on (not a blocker):** the statutory text references many
+**Follow-on (partially resolved):** the statutory text references many
 per-deposition fields the pipeline does not yet capture — time used
 per party, the officer's charges, custodial attorney, SBOT numbers,
 firm registration, CSR expiration, examination waived/retained. Where
@@ -54,6 +54,13 @@ a field has no value the generator renders a [BRACKETED] placeholder.
 A package with placeholders is correctly held at DRAFT. Fully
 populating the certificate requires a data-capture path (intake fields
 or a pre-export form) — a real follow-on task, separate from wording.
+
+**Wave 21 update (2026-05-25):** the data-capture path now exists and
+certification validation blocks when the enumerated follow-on fields are
+missing. The remaining open decision is **Q20-6**: whether this
+required-field set is the final James-approved legal set or whether it
+should be broadened further. That is now a policy/authority question,
+not a missing implementation path.
 
 ---
 

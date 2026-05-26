@@ -29,7 +29,23 @@ _VALID_METADATA = {
     "witness_name": "Dana Reed",
     "reporter_name": "Miah Bardot",
     "reporter_csr_number": "TX-10423",
+    "reporter_csr_expiration": "12/31/2027",
+    "firm_registration_no": "10698",
     "proceedings_date": "May 21, 2026",
+    "examination_disposition": "waived",
+    "custodial_attorney": "Ms. Elizabeth R. Flora, Esq.",
+    "officer_charges_amount": "450.00",
+    "charges_party": "Plaintiff",
+    "certificate_service_date": "June 5, 2026",
+    "time_per_party": [{"party": "Plaintiff Counsel", "duration": "1:30"}],
+    "counsel_of_record": [{"name": "Mr. D. Nunez", "role": "Attorney for Acme Corp."}],
+    "appearances": [{
+        "role": "plaintiff",
+        "attorney": "Mr. D. Nunez",
+        "firm": "Nunez & Associates",
+        "party": "Acme Corp.",
+        "sbot_no": "24098765",
+    }],
 }
 
 
@@ -137,6 +153,31 @@ def test_certify_empty_body_returns_422_with_detail(client, sample_job):
     # The error must mention body pages so the reporter understands the problem
     assert "body" in detail.lower(), \
         f"expected 'body' in error detail; got: {detail!r}"
+
+
+def test_certify_missing_statutory_field_returns_422_with_field_name(
+    client, sample_job_with_content
+):
+    job_id = sample_job_with_content
+    snap_id = _create_and_lock_snapshot(client, job_id)
+
+    bad_metadata = dict(_VALID_METADATA)
+    del bad_metadata["certificate_service_date"]
+
+    assemble_res = client.post(
+        f"/api/packages/jobs/{job_id}",
+        json={"snapshot_id": snap_id, "metadata": bad_metadata, "freelance": True},
+    )
+    assert assemble_res.status_code == 200
+    package_id = assemble_res.json()["package_id"]
+
+    certify_res = client.post(
+        f"/api/packages/{package_id}/certify",
+        json={"metadata": bad_metadata},
+    )
+    assert certify_res.status_code == 422
+    detail = certify_res.json()["detail"]
+    assert "certificate_service_date" in detail
 
 
 # ---------------------------------------------------------------------------

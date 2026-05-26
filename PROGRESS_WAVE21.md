@@ -62,3 +62,38 @@ Next build targets:
 1. Subsystem 3 — align certification validation with captured statutory fields
 2. Subsystem 4 — implement explicit runtime offline-provider mode with certification refusal
 3. Subsystem 5 — reconcile status docs to the verified codebase
+
+## 2026-05-25 — Subsystem 3 Completed
+
+Status change:
+- Subsystem 3 — Certificate Data-Capture Path: `OPERATIONAL`
+
+Implemented:
+- certification validation now blocks when the existing Stage 5 statutory fields are missing:
+  - `examination_disposition`
+  - `custodial_attorney`
+  - `officer_charges_amount`
+  - `charges_party`
+  - `certificate_service_date`
+  - `reporter_csr_expiration`
+  - `firm_registration_no`
+  - `time_per_party`
+  - `counsel_of_record`
+  - `appearances`
+- SBOT numbers are enforced through:
+  - `appearances[n].sbot_no`
+- Stage 5 now visibly marks the certificate fields as certification-gating
+- added negative-path certification coverage for missing statutory fields
+
+Verification:
+- focused packaging/certification suites: `60 passed`
+- full suite:
+  - `501 passed, 1 skipped, 32 warnings`
+
+Open decision carried forward:
+- `Q20-6` remains open in `docs/BLOCKERS.md`
+- the code now enforces the enumerated BLOCKER-3 follow-on fields without claiming that the broader final legal metadata set is settled forever
+
+Next build targets:
+1. Subsystem 4 — implement explicit runtime offline-provider mode with certification refusal
+2. Subsystem 5 — reconcile status docs to the verified codebase

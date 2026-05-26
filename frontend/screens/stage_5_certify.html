@@ -19,10 +19,11 @@
                     <!-- Certificate Data Fields -->
                     <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-left space-y-3 mb-4">
                         <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Reporter's Certificate Fields</p>
+                        <p class="text-[11px] text-amber-400 leading-relaxed">Fields in this panel are required for certification when the package would otherwise render bracketed legal placeholders.</p>
 
                         <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <label class="block text-xs text-slate-400 mb-1">Signature / Examination</label>
+                                <label class="block text-xs text-slate-400 mb-1">Signature / Examination <span class="text-amber-400">required</span></label>
                                 <select id="certExaminationDisposition" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
                                     <option value="">-- select --</option>
                                     <option value="waived">waived</option>
@@ -37,22 +38,22 @@
 
                         <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <label class="block text-xs text-slate-400 mb-1">Officer's Charges ($)</label>
+                                <label class="block text-xs text-slate-400 mb-1">Officer's Charges ($) <span class="text-amber-400">required</span></label>
                                 <input id="certChargesAmount" type="text" placeholder="e.g. 450.00" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
                             </div>
                             <div>
-                                <label class="block text-xs text-slate-400 mb-1">Charges Billed To</label>
+                                <label class="block text-xs text-slate-400 mb-1">Charges Billed To <span class="text-amber-400">required</span></label>
                                 <input id="certChargesParty" type="text" placeholder="e.g. Plaintiff" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
                             </div>
                         </div>
 
                         <div>
-                            <label class="block text-xs text-slate-400 mb-1">Certificate Service Date</label>
+                            <label class="block text-xs text-slate-400 mb-1">Certificate Service Date <span class="text-amber-400">required</span></label>
                             <input id="certServiceDate" type="text" placeholder="e.g. June 5, 2026" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
                         </div>
 
                         <div>
-                            <label class="block text-xs text-slate-400 mb-1">Time Used Per Party (one per line: Party - H:MM)</label>
+                            <label class="block text-xs text-slate-400 mb-1">Time Used Per Party (one per line: Party - H:MM) <span class="text-amber-400">required</span></label>
                             <textarea id="certTimePerParty" rows="2" placeholder="Plaintiff Counsel - 1:30&#10;Defense Counsel - 0:45" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono resize-none"></textarea>
                         </div>
 
