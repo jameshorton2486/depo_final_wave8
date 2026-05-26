@@ -138,3 +138,6 @@ data/cases/api-case-1/
 *.zip
 
 DEPO-PRO_Docs_Consolidation_Prompt.md
+
+.codex_tmp/
+.pytest_tmp/
