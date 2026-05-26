@@ -15,6 +15,7 @@ the ingestion pipeline runs as a FastAPI BackgroundTask. The frontend
 polls GET /jobs/{job_id} for status. This keeps the local-first desktop
 build simple -- no external queue/worker infrastructure.
 """
+
 from __future__ import annotations
 
 import re
@@ -46,6 +47,7 @@ from backend.models.transcripts import (
     TranscriptExhibit,
     TranscriptJob,
     TranscriptJobList,
+    TranscriptJobUpdateRequest,
     TranscriptParticipant,
     TranscriptProvenanceCreateRequest,
     TranscriptProvenanceEvent,
@@ -56,14 +58,12 @@ from backend.models.transcripts import (
     WorkingTranscriptSaveRequest,
     WorkingTranscriptSaveResponse,
 )
-from backend.services import intake_store
-from backend.services import speaker_mapping
-from backend.services import correction_trigger
+from backend.services import correction_trigger, intake_store, speaker_mapping
+from backend.transcript import export_render as export_render_mod
 from backend.transcript import ingest
 from backend.transcript import packet as packet_mod
-from backend.transcript import render as render_mod
-from backend.transcript import export_render as export_render_mod
 from backend.transcript import provenance as provenance_mod
+from backend.transcript import render as render_mod
 from backend.transcript import repository as trepo
 from backend.transcript import working_state as working_state_mod
 from backend.transcript_state import snapshot_repo
@@ -75,7 +75,15 @@ router = APIRouter(prefix="/api/transcripts", tags=["transcripts"])
 MAX_UPLOAD_BYTES = 300 * 1024 * 1024  # 300 MB
 
 ALLOWED_EXTENSIONS = {
-    ".mp3", ".wav", ".m4a", ".mp4", ".mov", ".aac", ".ogg", ".flac", ".webm",
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".mp4",
+    ".mov",
+    ".aac",
+    ".ogg",
+    ".flac",
+    ".webm",
 }
 
 
@@ -160,13 +168,9 @@ async def upload_transcript(
     if session_row.get("case_id") != case_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Session {session_id} does not belong to case {case_id}."
-            ),
+            detail=(f"Session {session_id} does not belong to case {case_id}."),
         )
-    logger.info(
-        f"Transcript upload bound to case {case_id}, session {session_id}, file {filename}"
-    )
+    logger.info(f"Transcript upload bound to case {case_id}, session {session_id}, file {filename}")
 
     # Create the job row first so we have the job_id for the audio path.
     job = trepo.create_job(
@@ -206,7 +210,7 @@ def list_jobs(
 ) -> TranscriptJobList:
     rows = trepo.list_jobs(case_id=case_id)
     return TranscriptJobList(
-        jobs=[TranscriptJob(**r) for r in rows],
+        jobs=[TranscriptJob(**{**r, "case_bound": bool(r.get("case_id"))}) for r in rows],
         count=len(rows),
     )
 
@@ -219,7 +223,63 @@ def get_job(job_id: str) -> TranscriptJob:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Transcript job {job_id} not found",
         )
-    return TranscriptJob(**row)
+    return TranscriptJob(**{**row, "case_bound": bool(row.get("case_id"))})
+
+
+@router.put("/jobs/{job_id}", response_model=TranscriptJob)
+def update_job(job_id: str, payload: TranscriptJobUpdateRequest) -> TranscriptJob:
+    row = trepo.get_job(job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+
+    patch: dict[str, str | None] = {}
+    if payload.case_id is not None:
+        from backend.db import repository as l1_repo
+
+        case_row = l1_repo.get_case(payload.case_id)
+        if case_row is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Case {payload.case_id} does not exist.",
+            )
+        if row.get("session_id"):
+            session_row = l1_repo.get_session(row["session_id"])
+            if session_row and session_row.get("case_id") != payload.case_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Transcript job {job_id} is already attached to session "
+                        f"{row['session_id']}, which belongs to a different case."
+                    ),
+                )
+        patch["case_id"] = payload.case_id
+
+    updated = trepo.update_job(job_id, patch)
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+
+    if payload.case_id is not None and payload.case_id != row.get("case_id"):
+        provenance_mod.record_event(
+            job_id,
+            event_type="job_case_bound",
+            title="Transcript Job Bound to Case",
+            detail=f"Transcript job {job_id} bound to case {payload.case_id}.",
+            actor_type="system",
+            source="stage2_transcripts",
+            metadata={
+                "previous_case_id": row.get("case_id") or "",
+                "case_id": payload.case_id,
+                "session_id": row.get("session_id") or "",
+            },
+        )
+
+    return TranscriptJob(**{**updated, "case_bound": bool(updated.get("case_id"))})
 
 
 @router.get("/jobs/{job_id}/content", response_model=TranscriptContent)
@@ -256,12 +316,8 @@ def get_job_content(job_id: str) -> TranscriptContent:
         speakers=[TranscriptSpeaker(**s) for s in trepo.get_speakers(job_id)],
         utterances=merged_utterances,
         words=[TranscriptWord(**w) for w in trepo.get_words(job_id)],
-        participants=[
-            TranscriptParticipant(**p) for p in trepo.get_participants(job_id)
-        ],
-        exhibits=[
-            TranscriptExhibit(**e) for e in trepo.list_exhibits(job_id)
-        ],
+        participants=[TranscriptParticipant(**p) for p in trepo.get_participants(job_id)],
+        exhibits=[TranscriptExhibit(**e) for e in trepo.list_exhibits(job_id)],
     )
 
 
@@ -304,8 +360,7 @@ def save_working_transcript(
             event_type="working_transcript_saved",
             title="Working Transcript Saved",
             detail=(
-                f"Saved {result['saved']} override(s); "
-                f"cleared {result['removed']} override(s)."
+                f"Saved {result['saved']} override(s); " f"cleared {result['removed']} override(s)."
             ),
             actor_type="system",
             source="workspace",
@@ -444,8 +499,7 @@ def get_speaker_mapping(job_id: str) -> SpeakerMappingView:
         detected_speakers=detected,
         participants=[TranscriptParticipant(**p) for p in participants],
         roles=[
-            RoleOption(value=r, label=speaker_mapping.ROLE_LABELS[r])
-            for r in speaker_mapping.ROLES
+            RoleOption(value=r, label=speaker_mapping.ROLE_LABELS[r]) for r in speaker_mapping.ROLES
         ],
         is_prefill=is_prefill,
         candidate_names=candidate_names,
@@ -466,6 +520,7 @@ def _build_candidate_names_for_job(job_row: dict) -> list[str]:
     if case_id:
         try:
             from backend.db import repository as case_repo
+
             case = case_repo.get_case(case_id)
             session = case_repo.get_session(session_id) if session_id else None
             intake = intake_store.read_stage1_record(case_id)
@@ -476,11 +531,13 @@ def _build_candidate_names_for_job(job_row: dict) -> list[str]:
                 role = "examining_attorney"
                 if a.get("side") == "defendant":
                     role = "defending_attorney"
-                attorneys.append({
-                    "name": a.get("name"),
-                    "honorific": a.get("honorific"),
-                    "role": role,
-                })
+                attorneys.append(
+                    {
+                        "name": a.get("name"),
+                        "honorific": a.get("honorific"),
+                        "role": role,
+                    }
+                )
             witness_name = ""
             if session:
                 witness_name = session.get("witness_name") or ""
@@ -549,9 +606,7 @@ def save_speaker_mapping(
     # idempotent, and makes no API calls -- no reason to gate it behind
     # a click. A missing engine is a no-op (correction_trigger is
     # defensive).
-    background_tasks.add_task(
-        correction_trigger.run_correction_engine_for_job, job_id
-    )
+    background_tasks.add_task(correction_trigger.run_correction_engine_for_job, job_id)
 
     return get_speaker_mapping(job_id)
 
@@ -588,16 +643,18 @@ def apply_speaker_mapping(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unknown participant role '{p.role}'.",
             )
-        to_save.append({
-            "participant_id": p.participant_id,
-            "name": p.name,
-            "role": p.role,
-            "speaker_indices": p.speaker_indices,
-            "is_prefill": 0,
-            "sort_order": p.sort_order,
-            "name_source": p.name_source,
-            "honorific": p.honorific,
-        })
+        to_save.append(
+            {
+                "participant_id": p.participant_id,
+                "name": p.name,
+                "role": p.role,
+                "speaker_indices": p.speaker_indices,
+                "is_prefill": 0,
+                "sort_order": p.sort_order,
+                "name_source": p.name_source,
+                "honorific": p.honorific,
+            }
+        )
     trepo.save_participants(job_id, to_save)
 
     # --- 2. Re-render WORKING from the canonical renderer -------------
@@ -654,8 +711,7 @@ def _read_packet_or_404(job_id: str, layer: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"No {layer} packet for job {job_id} yet "
-                f"(current status: {row['status']})."
+                f"No {layer} packet for job {job_id} yet " f"(current status: {row['status']})."
             ),
         )
     return packet_mod.read_packet(packet_path)
@@ -730,13 +786,12 @@ def _lexicon_config_for_job(job_row: dict) -> dict:
         return cfg
     try:
         from backend.db import repository as case_repo
+
         case = case_repo.get_case(case_id)
         intake = intake_store.read_stage1_record(case_id)
         if case:
             cfg["confirmed_spellings"] = case.get("confirmed_spellings") or {}
-        cfg["intake_keyterms"] = intake_store.keyterm_strings(
-            intake.get("keyterms") or []
-        )
+        cfg["intake_keyterms"] = intake_store.keyterm_strings(intake.get("keyterms") or [])
     except Exception as exc:
         logger.warning(f"lexicon config lookup failed: {exc}")
     return cfg
@@ -778,8 +833,9 @@ def _build_export_document(job_id: str):
     case_id_for_corr = row.get("case_id")
     if case_id_for_corr:
         try:
-            from backend.db import regex_rules_repo
             from backend.corrections.regex_rules import apply_regex_rules
+            from backend.db import regex_rules_repo
+
             rules = regex_rules_repo.list_rules(case_id_for_corr)
             if rules:
                 utterances, _ = apply_regex_rules(utterances, rules)
@@ -788,6 +844,7 @@ def _build_export_document(job_id: str):
     try:
         from backend.lexicon.merge import merge_from_job_config
         from backend.lexicon.stage_x import apply_stage_x
+
         lexicon = merge_from_job_config(_lexicon_config_for_job(row))
         if len(lexicon) > 0:
             utterances, _ = apply_stage_x(utterances, lexicon)
@@ -798,6 +855,7 @@ def _build_export_document(job_id: str):
     # segmentation, isolated objections, off-record tagging, and
     # procedural parentheticals. The export layer consumes its output.
     from backend.stage_s.renderer import render_stage_s
+
     stage_s = render_stage_s(utterances, participants)
 
     # Map Stage S RenderLines into the shape export_render expects.
@@ -816,11 +874,13 @@ def _build_export_document(job_id: str):
             lt = ln.line_type
         else:
             lt = "colloquy"
-        working.append({
-            "line_type": lt,
-            "speaker_label": ln.speaker_label,
-            "text": ln.text,
-        })
+        working.append(
+            {
+                "line_type": lt,
+                "speaker_label": ln.speaker_label,
+                "text": ln.text,
+            }
+        )
 
     # Case identity for the header block -- best-effort, blank if absent.
     caption = cause_number = witness = proceedings_date = ""
@@ -829,6 +889,7 @@ def _build_export_document(job_id: str):
     if case_id:
         try:
             from backend.db import repository as case_repo
+
             case = case_repo.get_case(case_id)
             if case:
                 caption = case.get("caption_full") or ""
@@ -840,7 +901,8 @@ def _build_export_document(job_id: str):
     for p in participants:
         if p.get("role") == "examining_attorney":
             examining_label = speaker_mapping.participant_label(
-                "examining_attorney", p.get("name"), p.get("honorific"))
+                "examining_attorney", p.get("name"), p.get("honorific")
+            )
             break
     # Witness name from the confirmed participants.
     for p in participants:
@@ -922,10 +984,12 @@ def _build_export_document_from_snapshot(snapshot_state: dict, *, snapshot_id: s
         from backend.lexicon.stage_x import apply_stage_x
 
         lexicon_cfg = snapshot_state.get("lexicon_state") or {}
-        lexicon = merge_from_job_config({
-            "confirmed_spellings": lexicon_cfg.get("confirmed_spellings") or {},
-            "intake_keyterms": lexicon_cfg.get("intake_keyterms") or [],
-        })
+        lexicon = merge_from_job_config(
+            {
+                "confirmed_spellings": lexicon_cfg.get("confirmed_spellings") or {},
+                "intake_keyterms": lexicon_cfg.get("intake_keyterms") or [],
+            }
+        )
         if len(lexicon) > 0:
             utterances, _ = apply_stage_x(utterances, lexicon)
     except Exception as exc:
@@ -944,11 +1008,13 @@ def _build_export_document_from_snapshot(snapshot_state: dict, *, snapshot_id: s
             lt = ln.line_type
         else:
             lt = "colloquy"
-        working_lines.append({
-            "line_type": lt,
-            "speaker_label": ln.speaker_label,
-            "text": ln.text,
-        })
+        working_lines.append(
+            {
+                "line_type": lt,
+                "speaker_label": ln.speaker_label,
+                "text": ln.text,
+            }
+        )
 
     export_meta = snapshot_state.get("export_metadata") or {}
     caption = export_meta.get("caption") or ""
@@ -994,7 +1060,7 @@ def get_export_preview(job_id: str) -> dict:
 
 class ExportRequest(BaseModel):
     fmt: str = "txt"
-    destination: str = "downloads"   # downloads | case_folder | path
+    destination: str = "downloads"  # downloads | case_folder | path
     explicit_path: str | None = None
     snapshot_id: str | None = None
 
@@ -1033,11 +1099,9 @@ def export_transcript(job_id: str, payload: ExportRequest) -> dict:
             snapshot_id=snap.snapshot_id,
         )
         export_state = "certified_snapshot"
-        logger.info(
-            f"Export render source for {job_id}: locked snapshot {snap.snapshot_id}"
-        )
+        logger.info(f"Export render source for {job_id}: locked snapshot {snap.snapshot_id}")
     else:
-        doc, paginated = _build_export_document(job_id)   # 404s on unknown job
+        doc, paginated = _build_export_document(job_id)  # 404s on unknown job
         logger.info(f"Export render source for {job_id}: live working transcript")
 
     # Resolve the case's workspace directory, if any.
@@ -1047,6 +1111,7 @@ def export_transcript(job_id: str, payload: ExportRequest) -> dict:
     if case_id:
         try:
             from backend.db import repository as case_repo
+
             case = case_repo.get_case(case_id)
             if case and case.get("workspace_dir"):
                 case_dir = case["workspace_dir"]
@@ -1061,17 +1126,20 @@ def export_transcript(job_id: str, payload: ExportRequest) -> dict:
 
     try:
         result = export_service.export_document(
-            doc, payload.fmt, payload.destination,
-            explicit_path=payload.explicit_path, case_dir=case_dir,
-            paginated_document=paginated)
+            doc,
+            payload.fmt,
+            payload.destination,
+            explicit_path=payload.explicit_path,
+            case_dir=case_dir,
+            paginated_document=paginated,
+        )
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except Exception as exc:
         logger.error(f"Export failed for {job_id}: {exc}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Export failed: {exc}")
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Export failed: {exc}"
+        )
 
     # Wave 18.5: every export captures an EXPORT snapshot and records
     # an export reference, so "which transcript state did this file
@@ -1080,7 +1148,9 @@ def export_transcript(job_id: str, payload: ExportRequest) -> dict:
     recorded_snapshot_id = None
     try:
         import datetime
+
         from backend.transcript_state import snapshot_service
+
         if snapshot_id:
             snapshot_service.record_export(
                 snapshot_id,
@@ -1091,8 +1161,10 @@ def export_transcript(job_id: str, payload: ExportRequest) -> dict:
             recorded_snapshot_id = snapshot_id
         else:
             snap = snapshot_service.create_snapshot(
-                job_id, category="EXPORT",
-                note=f"Auto-snapshot on {result['format'].upper()} export")
+                job_id,
+                category="EXPORT",
+                note=f"Auto-snapshot on {result['format'].upper()} export",
+            )
             snapshot_service.record_export(
                 snap.snapshot_id,
                 export_id=result["filename"],

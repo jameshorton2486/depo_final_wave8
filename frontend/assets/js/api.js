@@ -331,6 +331,9 @@
             const q = caseId ? `?case_id=${encodeURIComponent(caseId)}` : '';
             return _fetch('GET', `/transcripts/jobs${q}`);
         },
+        updateTranscriptJob(jobId, payload) {
+            return _fetch('PUT', `/transcripts/jobs/${encodeURIComponent(jobId)}`, payload || {});
+        },
         getTranscriptJob(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}`);
         },
