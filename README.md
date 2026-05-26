@@ -6,21 +6,23 @@ HTML/Tailwind/JavaScript frontend, PyWebView desktop runtime.
 
 ## Status
 
-| Layer            | State          | Notes                                                       |
-| ---------------- | -------------- | ----------------------------------------------------------- |
-| Desktop launcher | working        | PyWebView shell, FastAPI on background thread               |
-| FastAPI backend  | working (thin) | `/api/health` only; no domain routers yet                   |
-| SQLite (Layer 1) | working        | v1 schema applied on startup; `form_templates` seeded       |
-| Frontend (UI)    | working (mock) | Six interactive stages, in-memory mock data, no persistence |
-| Persistence API  | not started    | next milestone — see "Next up" below                        |
-| NOD parser       | not started    | spec in `docs/nod_parser_spec.md`                           |
-| Deepgram         | not started    | reserved package only                                       |
-| AI cleanup       | not started    | reserved package only                                       |
-| DOCX export      | not started    | current export is a text blob with `.docx` extension        |
+| Layer | State | Notes |
+| --- | --- | --- |
+| Desktop launcher | working | PyWebView shell over the same FastAPI backend |
+| FastAPI backend | operational | 12 registered domain routers plus `/api/health` |
+| SQLite persistence | operational | append-only schema migrations through `schema_v12.sql` |
+| Frontend workflow | operational | Stage 1–6 UI is wired to the real backend |
+| Persistence API | operational | cases, sessions, reporters, transcripts, snapshots, exhibits, packaging |
+| NOD parser | operational | real parser + intelligence path, backend wired |
+| Deepgram ingestion | operational | live Deepgram plus explicit offline validation mode |
+| AI review | operational | advisory-only review with explicit apply flow |
+| Export engine | operational | working export + certified snapshot export |
+| Certification chain | operational | snapshot lock -> package assemble -> certify |
 
-The frontend currently runs entirely off the in-memory `state` object
-in `frontend/assets/js/state.js`. Refresh wipes everything; this is by
-design until the persistence API lands.
+This is no longer a mock frontend. Stage 1 intake, Stage 2 transcript
+ingestion, Stage 3 working transcript persistence, Stage 4 exhibits,
+Stage 5 certification lineage, and Stage 6 export all persist through
+the FastAPI + SQLite backend.
 
 ## Environment Setup
 
@@ -68,25 +70,30 @@ Desktop shell (PyWebView wrapping the same backend):
 python desktop\launcher.py
 ```
 
-The backend serves the static frontend from `frontend/` and applies
-the v1 SQLite schema to `data\sqlite\depo_pro.db` on startup.
+The backend serves the static frontend from `frontend/` and applies the
+full append-only SQLite migration chain to `data\sqlite\depo_pro.db` on
+startup.
 
 ## Project Layout
 
 ```text
-depo_final/
+depo_final_wave8/
 ├── backend/
-│   ├── api/              # FastAPI routers (placeholder; nothing wired yet)
+│   ├── api/              # FastAPI routers (cases, sessions, intake, transcripts, packaging, ...)
 │   ├── database/         # initialize_database() entrypoint (delegates to db/)
 │   ├── db/               # canonical schema + migrations + seeds
 │   │   ├── schema_v1.sql
+│   │   ├── ...
+│   │   ├── schema_v12.sql
 │   │   ├── migrations.py
 │   │   └── seeds.py
-│   ├── deepgram/         # reserved
-│   ├── models/           # reserved
-│   ├── preprocessing/    # reserved
-│   ├── services/         # reserved
-│   ├── transcript/       # reserved
+│   ├── deepgram/         # live + offline transcription provider paths
+│   ├── export/           # DOCX / PDF / TXT / RTF export writers
+│   ├── packaging/        # certified package assembly + validation
+│   ├── pagination/       # pagination + page geometry pipeline
+│   ├── services/         # intake, keyterms, NOD parsing, workspace helpers
+│   ├── transcript/       # ingest, repository, render, working state, provenance
+│   ├── transcript_state/ # snapshots, rollback, state hashing
 │   ├── app.py            # FastAPI app + static mount
 │   └── config.py         # Settings dataclass + env wiring
 ├── desktop/
@@ -98,7 +105,7 @@ depo_final/
 ├── data/                 # runtime files (sqlite, cases, exports, audio, …)
 ├── docs/                 # ufm_schema_v1.md, nod_parser_spec.md, architecture.md
 ├── scripts/              # *.bat maintenance helpers (Windows)
-├── tests/                # empty; tests live here once written
+├── tests/                # backend + workflow integration tests
 ├── main.py               # python main.py == python desktop/launcher.py
 ├── pyproject.toml
 └── requirements.txt
@@ -113,8 +120,9 @@ All optional. Read from `.env` (gitignored) or the process environment.
 | `DEPOPRO_HOST`               | `127.0.0.1` | Backend bind host                    |
 | `DEPOPRO_PORT`               | `8765`      | Backend bind port                    |
 | `DEPOPRO_DEBUG`              | `0`         | `1` enables DevTools + access logs   |
+| `DEPOPRO_TRANSCRIPTION_PROVIDER` | `deepgram` | `deepgram` or `offline` runtime transcription mode |
 | `DEPOPRO_LAUNCHER_SMOKE_TEST`| unset       | `1` makes launcher exit before GUI   |
-| `DEEPGRAM_API_KEY`           | unset       | Required once Deepgram lands         |
+| `DEEPGRAM_API_KEY`           | unset       | live Deepgram key for authoritative transcription |
 
 ## Maintenance Scripts
 
@@ -125,15 +133,11 @@ scripts\verify_project.bat       # smoke test: imports, DB, FastAPI, launcher
 scripts\full_maintenance.bat     # all of the above
 ```
 
-## Next Up (the work tracked elsewhere)
+## Current Focus
 
-1. Persistence API: `POST/GET/PUT /api/cases`, swap the frontend
-   `simulateSave()` toast for a real round-trip against the v1 schema.
-2. NOD parser endpoint: `POST /api/nod/parse` per
-   `docs/nod_parser_spec.md`. Start with the Type A (S.A. Legal
-   Solutions) form layout.
-3. Deepgram batch ingestion to replace the mock progress simulator on
-   Stage 2.
+1. Real-world MVP validation using `docs/audits/REAL_WORLD_VALIDATION_LOG.md`.
+2. Workflow trust verification across Stage 1–6 with real data.
+3. Narrow stabilization fixes discovered during validation, not broad architecture rewrites.
 
 See `docs/architecture.md` for the four-layer model and
 `docs/ufm_schema_v1.md` for the canonical data contract.
