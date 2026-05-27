@@ -62,31 +62,34 @@ class ParsedNOD:
 
     def to_frontend_dict(self) -> dict:
         """Return the dict shape the frontend's existing field-population code expects."""
+        fields = {
+            "ufmCause": self.ufm_cause or "",
+            "ufmStyle": self.ufm_style or "",
+            "ufmCourt": self.ufm_court or "",
+            "ufmCounty": self.ufm_county or "",
+            "ufmState": self.ufm_state,
+            "ufmWitness": self.ufm_witness or "",
+            "ufmDate": self.ufm_date or "",
+            "ufmStartTime": self.ufm_start_time or "",
+            "ufmEndTime": self.ufm_end_time or "",
+            "ufmAddress": self.ufm_address or "",
+            "ufmCustodialName": self.ufm_custodial_name or "",
+            "ufmRequestingParty": self.ufm_requesting_party or "",
+            "ufmCSRName": self.ufm_csr_name or "",
+            "ufmCSRLicense": self.ufm_csr_license or "",
+            "ufmFirmReg": self.ufm_firm_reg or "",
+            "ufmCSRCertExp": self.ufm_csr_cert_exp or "",
+        }
+        field_sources = {k: "nod_parser" for k, v in fields.items() if v}
         return {
-            "fields": {
-                "ufmCause": self.ufm_cause or "",
-                "ufmStyle": self.ufm_style or "",
-                "ufmCourt": self.ufm_court or "",
-                "ufmCounty": self.ufm_county or "",
-                "ufmState": self.ufm_state,
-                "ufmWitness": self.ufm_witness or "",
-                "ufmDate": self.ufm_date or "",
-                "ufmStartTime": self.ufm_start_time or "",
-                "ufmEndTime": self.ufm_end_time or "",
-                "ufmAddress": self.ufm_address or "",
-                "ufmCustodialName": self.ufm_custodial_name or "",
-                "ufmRequestingParty": self.ufm_requesting_party or "",
-                "ufmCSRName": self.ufm_csr_name or "",
-                "ufmCSRLicense": self.ufm_csr_license or "",
-                "ufmFirmReg": self.ufm_firm_reg or "",
-                "ufmCSRCertExp": self.ufm_csr_cert_exp or "",
-            },
+            "fields": fields,
             "metadata": {
                 "detected_types": self.detected_types,
                 "jurisdiction_type": self.jurisdiction_type,
                 "location_type": self.location_type,
                 "additional_sessions": self.additional_sessions,
                 "warnings": self.warnings,
+                "field_sources": field_sources,
             },
             # --- Deepgram intelligence list ---
             "keyterms": self.keyterms,

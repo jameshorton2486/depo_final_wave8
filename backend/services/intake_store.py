@@ -35,6 +35,30 @@ _SOURCE_ALIASES = {
 }
 _VALID_SOURCES = {"nod_parser", "text_parser", "learned", "manual"}
 
+# Canonical UFM field IDs. Keep aligned with frontend UFM_FIELD_IDS in
+# stage_1.js — these are the only keys accepted in field_confirmations.
+UFM_FIELD_IDS = (
+    "ufmCause", "ufmStyle", "ufmCourt", "ufmCounty", "ufmState",
+    "ufmWitness", "ufmDate", "ufmStartTime", "ufmEndTime", "ufmAddress",
+    "ufmCSRName", "ufmCSRLicense", "ufmFirmReg", "ufmCSRCertExp",
+    "ufmCustodialName", "ufmRequestingParty",
+)
+
+
+def filter_field_confirmations(raw: dict | None) -> dict[str, str]:
+    """Return a sanitized field_confirmations dict.
+
+    Only known UFM field IDs (UFM_FIELD_IDS) are kept; the only valid value
+    is the literal "confirmed". Anything else is dropped.
+    """
+    out: dict[str, str] = {}
+    if not isinstance(raw, dict):
+        return out
+    for key, value in raw.items():
+        if key in UFM_FIELD_IDS and value == "confirmed":
+            out[key] = "confirmed"
+    return out
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -130,6 +154,8 @@ def _default_record(case_id: str) -> dict:
             "warnings": [],
             "field_sources": {},
         },
+        "field_confirmations": {},
+        "ufm_fields": {},
         "keyterms": [],
         "workspace": {
             "sessions": {},
@@ -137,6 +163,21 @@ def _default_record(case_id: str) -> dict:
         "created_at": now,
         "updated_at": now,
     }
+
+
+def filter_ufm_fields(raw: dict | None) -> dict[str, str]:
+    """Return only known UFM field IDs as string values."""
+    out: dict[str, str] = {}
+    if not isinstance(raw, dict):
+        return out
+    for key in UFM_FIELD_IDS:
+        value = raw.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            out[key] = text
+    return out
 
 
 def read_stage1_record(case_id: str) -> dict:
@@ -163,6 +204,10 @@ def read_stage1_record(case_id: str) -> dict:
         (data.get("workspace") or {}).get("sessions") or {}
     )
     record["keyterms"] = normalize_keyterm_entries(data.get("keyterms") or [])
+    record["field_confirmations"] = filter_field_confirmations(
+        data.get("field_confirmations")
+    )
+    record["ufm_fields"] = filter_ufm_fields(data.get("ufm_fields"))
     return record
 
 
@@ -176,6 +221,10 @@ def write_stage1_record(case_id: str, record: dict) -> dict:
         **(base.get("workspace") or {}),
     }
     base["workspace"]["sessions"] = dict(base["workspace"].get("sessions") or {})
+    base["field_confirmations"] = filter_field_confirmations(
+        base.get("field_confirmations")
+    )
+    base["ufm_fields"] = filter_ufm_fields(base.get("ufm_fields"))
     base["updated_at"] = _utc_now_iso()
 
     path = intake_metadata_path(case_id)
@@ -283,9 +332,33 @@ def sync_stage1_artifacts(payload: dict) -> dict:
     }
     keyterms = normalize_keyterm_entries(payload.get("keyterms") or record.get("keyterms"))
 
+    raw_incoming = payload.get("field_confirmations")
+    if raw_incoming is None:
+        raw_incoming = {}
+    if not isinstance(raw_incoming, dict):
+        raise ValueError("field_confirmations must be an object")
+    merged_confirmations = filter_field_confirmations(record.get("field_confirmations"))
+    for key, value in raw_incoming.items():
+        if key not in UFM_FIELD_IDS:
+            # API layer should reject this; defensive guard here.
+            raise ValueError(f"Unknown field_confirmations key: {key}")
+        if value == "confirmed":
+            merged_confirmations[key] = "confirmed"
+        else:
+            merged_confirmations.pop(key, None)
+
+    # Mirror UFM field values from the sync payload into the intake record
+    # so the UFM preview can derive its view from a single store. This is
+    # additive — SQLite cases/sessions/reporters remain authoritative for
+    # their canonical columns; this mirror is for operator transparency
+    # only and is replaced wholesale on each sync.
+    incoming_ufm = filter_ufm_fields({k: payload.get(k) for k in UFM_FIELD_IDS})
+
     record["raw_intake_notes"] = payload.get("raw_intake_notes") or ""
     record["parser_metadata"] = parser_metadata
     record["keyterms"] = keyterms
+    record["field_confirmations"] = merged_confirmations
+    record["ufm_fields"] = incoming_ufm
 
     persisted_keyterms = persist_case_keyterms(
         case_id,
@@ -343,6 +416,7 @@ def sync_stage1_artifacts(payload: dict) -> dict:
         "metadata_path": str(intake_metadata_path(case_id)),
         "keyterms": record["keyterms"],
         "parser_metadata": record["parser_metadata"],
+        "field_confirmations": record["field_confirmations"],
         "raw_intake_notes": record["raw_intake_notes"],
         "workspace": record["workspace"],
     }
