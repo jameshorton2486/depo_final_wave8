@@ -1,4 +1,8 @@
-uvicorn backend.app:app --port 8765 --reloaduvicorn backend.app:app --port 8765 --reload# DEPO-PRO — Transcript Diff Harness
+> DOCUMENT STATUS: CANONICAL SUBSYSTEM SPEC
+> Scope: transcript diffing, diagnostics artifacts, and mutation-detection input contract.
+> `backend/diagnostics/` remains read-only, but its output now feeds mutation-detection enforcement in the certification path.
+
+# DEPO-PRO — Transcript Diff Harness
 
 **Build Specification — Debugging & Regression Tool**
 

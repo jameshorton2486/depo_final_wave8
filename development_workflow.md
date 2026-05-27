@@ -1,3 +1,7 @@
+> DOCUMENT STATUS: ACTIVE REFERENCE
+> Scope: runtime transcription trust modes and operator-facing execution rules.
+> This file owns runtime `deepgram` vs `offline` behavior only. It does not replace `docs/development_workflow.md`, which covers developer setup and local maintenance.
+
 # development_workflow.md
 
 ## Runtime Transcription Modes

@@ -1,3 +1,8 @@
+> DOCUMENT STATUS: SUPERSEDED ACTIVE DOCUMENT
+> Scope: historical Wave 10 foundation delivery note retained beside the code for provenance.
+> Warning: this document predates later correction-engine, diagnostics, and mutation-detection work. It is useful for history but not safe as current subsystem authority.
+> Current authority: `CLAUDE.md`, `docs/ACTIVE_SPEC_REGISTRY.md`, `docs/architecture/transcript_engine/*.md`, `docs/SYSTEM_OWNERSHIP.md`, and `docs/TRANSCRIPT_ORCHESTRATION.md`.
+
 # Wave 10 — Correction Engine: Foundation Delivery
 
 This drop adds the **deterministic correction engine foundation** to DEPO-PRO.
@@ -29,9 +34,8 @@ tests/corrections/
 
 ## Test status
 
-- New: **46 tests**, all passing.
-- Full project suite: **189 passed, 3 skipped** — no regressions; nothing in the
-  existing app was modified. This drop is purely additive.
+- Historical note: the counts in this section are the foundation-drop counts at
+  the time this note was written, not the current repository totals.
 
 Run them:
 
@@ -67,11 +71,12 @@ result.log      # CorrectionLogEntry list — every change, auditable
 result.flags    # Flag list — what was deferred to the reporter
 ```
 
-## Wiring into the app (not done in this drop — your call)
+## Wiring into the app (historical note)
 
-The engine is self-contained and not yet called by the app. To wire it in
-(Wave 11's "Assign Speakers" will be the trigger), build the `Utterance` list
-from the existing repository:
+At the time of this note the engine was not yet wired into the app. The live
+repository now invokes deterministic correction through the current transcript
+and speaker-mapping orchestration; use the active specs and governance docs for
+current behavior rather than this historical wiring note.
 
 ```python
 from backend.transcript import repository as trepo
@@ -102,7 +107,9 @@ entities (`confirmed_spellings`), and the reporter name — the same sources Wav
 
 ## Scope — what is NOT in this drop
 
-Per the §22 build order, the **structural stages are deliberately not built yet**:
+Historical note: this section reflects the foundation-drop scope at the time of
+writing. Later work added diagnostics, mutation detection, and broader
+orchestration beyond this initial drop.
 
 - **Stage X** — legal lexicon (garbled-objection resolution)
 - **Stage S** — off-record structuring / parentheticals

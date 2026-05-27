@@ -1,3 +1,7 @@
+> DOCUMENT STATUS: TEMPORARY OPERATIONAL DOCUMENT
+> Scope: active human validation log and defect ledger for real-world MVP testing.
+> This document records observations. It does not define architecture or subsystem ownership.
+
 # REAL WORLD VALIDATION LOG
 
 Purpose: operational MVP validation for DEPO-PRO after the Stage 4 / Stage 5 authority stabilization checkpoint.

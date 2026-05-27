@@ -1,3 +1,7 @@
+> DOCUMENT STATUS: ACTIVE REFERENCE
+> Scope: transcript fixtures and expected-output guidance for tests.
+> These are test assets and fixture conventions, not runtime or architecture authority.
+
 # Transcript Fixtures & Examples
 
 Real transcript fixtures, known defects, and expected outputs. Used by the

@@ -1,8 +1,16 @@
+> DOCUMENT STATUS: CANONICAL CURRENT-STATE GOVERNANCE
+> Scope: verified wave-by-wave operational status, current frontier, and current decision backlog.
+> This document is current-state status authority only. It does not own architecture, transcript rules, or subsystem ownership. Historical `wave*.md` build records do not override it.
+
 # DEPO-PRO — Wave Status Report
 
 *Verified against the codebase. This document tells you, for every
 wave, whether it is fully operational or not — and how to check it
 yourself.*
+
+For ownership, transcript lifecycle, and export/certification authority, defer
+to `docs/SYSTEM_OWNERSHIP.md`, `docs/TRANSCRIPT_ORCHESTRATION.md`, and
+`docs/EXPORT_AND_CERTIFICATION_PIPELINE.md`.
 
 ---
 
@@ -80,14 +88,14 @@ api/service layer, and the test suite (the full suite green (run `python -m pyte
 You do not need to take anyone's word for it. Four checks, in a
 terminal at the project root:
 
-**Is there a spec?**
+**Is there active documentation authority?**
 ```
-ls docs/ | grep -i wave
+Get-ChildItem docs -Recurse -Filter *.md
 ```
 
 **Does the code exist?**
 ```
-ls backend/
+Get-ChildItem backend
 ```
 Each wave maps to a folder: `corrections` (W10), `stage_s` (W13),
 `lexicon` (W14), `ai_review` (W15b/16), `export` (W18),
@@ -102,8 +110,8 @@ A green suite means every Built+Tested wave is correct.
 
 **Is it wired into the running app?** — the decisive check. Two parts:
 ```
-grep "include_router" backend/app.py
-grep -rl "backend.<module>" backend/api backend/services
+rg "include_router" backend/app.py
+rg -l "backend\\.<module>" backend/api backend/services
 ```
 If a backend module has **no router** in `app.py` **and** is
 **referenced by zero** api/service files, it is built-but-not-wired.
@@ -139,10 +147,11 @@ not from assumptions that Waves 19–20 are still unwired.
 
 ---
 
-## 7. How to read a spec's own status
+## 7. How to read an active spec's own status
 
-Every spec doc carries its completeness signals in two places. To audit
-any spec yourself, read both:
+Historical `wave*.md` build records now live under `docs/archive/`.
+For active subsystem specs, read completeness and authority signals in
+two places:
 
 1. **The Status line** — at the top of the doc (line 2–3). The author's
    declared state: `complete`, `BUILT`, `SPEC + BUILT`, or a `PLAN`
@@ -152,11 +161,11 @@ any spec yourself, read both:
 
 2. **The "Open Questions" / "Open Decisions" section** — near the end.
 
-To scan every spec at once:
+To scan active docs at once:
 ```
-grep -i "^status\|Status:" docs/wave*.md          # declared status
-grep -lri "TODO\|TBD\|FIXME" docs/                 # abandoned stubs (none today)
-grep -ln "Open Question\|Open Decision" docs/wave*.md
+rg -n "^> DOCUMENT STATUS|^Status:" docs --glob "!docs/archive/**"
+rg -l "TODO|TBD|FIXME" docs --glob "!docs/archive/**"
+rg -n "Open Question|Open Decision|Open questions" docs --glob "!docs/archive/**"
 ```
 
 **Key point:** an "Open Questions" section inside a *BUILT* spec does
@@ -166,24 +175,16 @@ list, not an engineering backlog.
 
 ---
 
-## 8. Spec audit — declared status
+## 8. Active-spec audit — declared status
 
-All 22 wave spec documents are complete documents. None contains a
-TODO / TBD / FIXME marker. Declared statuses:
+The historical wave build records are archived. The active subsystem
+specs still governing code today are:
 
-| Spec | Declared status |
-|------|-----------------|
-| wave2 (step1, step2) | *(no status line — predates the convention)* |
-| wave4, wave5 ×2, wave6, wave7, wave8 | complete |
-| wave9 | *(no status line)* |
-| wave11 panel spec | *(no status line)* |
-| wave11 build completion | BUILT |
-| wave12 | BUILT |
-| wave13, wave14, wave15b | SPEC + BUILT |
-| wave15a | AUDIT + BUILT |
-| wave16, wave17, wave18, wave18.5 | BUILT |
-| wave19 | BUILT — geometry-into-DOCX is the next pass |
-| wave20 | BUILT — engine core |
+| Spec | Current role |
+|------|--------------|
+| `docs/nod_parser_spec.md` | Active subsystem spec |
+| `docs/wave19_ufm_layout.md` | Active subsystem spec |
+| `docs/wave20_packaging.md` | Active subsystem spec |
 
 ### Outstanding decisions (the only spec-level "incomplete" items)
 
@@ -208,6 +209,10 @@ engineering consequences.
 
 ---
 
-*Generated as a verified audit of the depo_wave20 codebase. Re-run the
+*Generated as a verified audit of the current DEPO-PRO codebase. Re-run the
 section 4 and section 7 checks after any change to keep this picture
 current.*
+
+Maintenance expectation: update this file when wave status, current frontier,
+or named open decisions materially change. Do not use it as a substitute for
+canonical ownership or transcript-safety contracts.

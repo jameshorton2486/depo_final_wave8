@@ -127,3 +127,59 @@
         .animate-slide-in {
             animation: slide-in 0.15s ease-out forwards;
         }
+
+        /* ===== Word / Print Layout overrides =====
+           Applied when the transcript canvas carries the .ms-word-page class.
+           These selectors hide UI chrome that has no place in a printed legal transcript
+           and restyle Q/A prefixes from colored to black.
+           The class names (transcript-gutter, transcript-meta, etc.) are added
+           to generated elements in compileAndRenderTranscript() in Phase 2.     */
+
+        /* Hide the confidence gutter bar */
+        .ms-word-page .transcript-gutter {
+            display: none !important;
+        }
+
+        /* Hide the speaker meta line (speaker name + timestamp + badges) */
+        .ms-word-page .transcript-meta {
+            display: none !important;
+        }
+
+        /* Hide source / mutation badges (AI APPLIED, WORKING OVERRIDE, etc.) */
+        .ms-word-page .transcript-source-badge {
+            display: none !important;
+        }
+
+        /* Q. prefix — black in Word mode */
+        .ms-word-page .transcript-q-prefix {
+            color: #0f172a !important;
+            font-weight: 700;
+        }
+
+        /* A. prefix — black in Word mode */
+        .ms-word-page .transcript-a-prefix {
+            color: #0f172a !important;
+            font-weight: 700;
+        }
+
+        /* For colloquy lines in Word mode: show the speaker label inline before text */
+        .ms-word-page .transcript-colloquy-speaker {
+            display: inline !important;
+            font-weight: 700;
+            color: #0f172a;
+            font-size: 0.75rem;
+        }
+
+        /* Outer scroll area: lighten background in Word mode so the white page
+           looks like a document on a light desk, not a dark screen */
+        .word-mode-canvas-bg {
+            background-color: #e2e8f0 !important;
+        }
+
+        /* Editable transcript lines: disable visual focus ring in Word mode */
+        .ms-word-page .transcript-line:focus {
+            background-color: transparent !important;
+            border-radius: 0 !important;
+        }
+
+        /* Low confidence underline: keep in Word mode (it is editorial information) */

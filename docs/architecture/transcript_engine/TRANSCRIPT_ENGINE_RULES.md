@@ -1,4 +1,8 @@
-# CLAUDE_TRANSCRIPT_RULES.md
+> DOCUMENT STATUS: CANONICAL SUBSYSTEM SPEC
+> Scope: transcript-engine invariants, verbatim safety rules, and mutation-safety prohibitions.
+> This is the canonical transcript-safety contract for `backend/corrections/` and `backend/diagnostics/`.
+
+# TRANSCRIPT_ENGINE_RULES.md
 
 **The Transcript Engine Constitution**
 

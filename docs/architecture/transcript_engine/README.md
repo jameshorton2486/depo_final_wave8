@@ -1,9 +1,14 @@
+> DOCUMENT STATUS: ACTIVE REFERENCE
+> Scope: index of the active transcript-engine specs and related governance docs.
+> Use this as a map, not as a second authority layer.
+
 # Transcript Engine — Architecture Documents
 
 Authoritative engineering documents for DEPO-PRO's transcript-processing system.
 These are build specifications and architectural contracts — code is built *from*
-them. They are versioned with the code. If code and a spec conflict, the spec is
-correct.
+them. They are versioned with the code. If code and a spec appear to conflict,
+treat that as governance drift to audit against the live canonical docs and the
+current implementation. Do not invent a parallel interpretation.
 
 **The application does not read these files at runtime.** They are developer
 architecture docs. Rules are hand-encoded in Python; the docs are never parsed,
@@ -15,7 +20,7 @@ loaded, or injected into prompts.
 
 | File | Status | Purpose |
 |---|---|---|
-| `CLAUDE_TRANSCRIPT_RULES.md` | **Authoritative** | The constitution — the one-minute list of invariant rules. Read first. |
+| `TRANSCRIPT_ENGINE_RULES.md` | **Authoritative** | The constitution — the one-minute list of invariant rules. Read first. |
 | `deterministic_correction_engine_spec.md` | **Authoritative · v1.1** | Complete build spec for `backend/corrections/` — the no-AI regex/script correction engine. |
 | `transcript_diff_harness_spec.md` | **Authoritative · v1.1** | Complete build spec for `backend/diagnostics/` — the APP-vs-RAW measurement and regression tool. |
 
@@ -27,11 +32,11 @@ known and the scope is honest:
 
 | Proposed file | Note |
 |---|---|
-| `transcript_pipeline_overview.md` | A one-page map across ingest → assembler → speaker mapping → correction engine → DOCX. Worth writing once the engine is built. |
+| `transcript_pipeline_overview.md` | Replaced in current governance by `docs/TRANSCRIPT_ORCHESTRATION.md`. |
 | `transcript_object_model.md` | The canonical word/utterance/participant data model. Currently documented inline in the engine spec §4 and the Wave 9 schema. |
-| `speaker_mapping_architecture.md` | Wave 9 is already built and documented in `docs/wave9_speaker_mapping.md`. This would consolidate that — low priority. |
+| `speaker_mapping_architecture.md` | Speaker-mapping authority now lives in `docs/SYSTEM_OWNERSHIP.md` and `docs/TRANSCRIPT_ORCHESTRATION.md`. A separate architecture note would be additive, not authoritative. |
 | `parity_mode_spec.md` | **Redundant** — Parity Mode is fully specified in the engine spec §3A. A separate file would duplicate it. |
-| `transcript_lifecycle.md` | RAW → WORKING → corrected → certified lifecycle. Worth writing alongside the pipeline overview. |
+| `transcript_lifecycle.md` | Replaced in current governance by `docs/TRANSCRIPT_ORCHESTRATION.md`. |
 
 Write these only when there is real content for them — not as placeholders.
 
@@ -54,7 +59,8 @@ building the structural stages (X, S, Q).
 ## Related, outside this folder
 
 - `docs/examples/` — transcript fixtures and expected outputs for tests.
-- `docs/wave9_speaker_mapping.md` — the (built) Wave 9 speaker-mapping layer.
+- `docs/SYSTEM_OWNERSHIP.md` — current module ownership and anti-parallel-system rules.
+- `docs/TRANSCRIPT_ORCHESTRATION.md` — current raw → working → certified lifecycle and mutation flow.
 - Legal Standards Reference, UFM Transcript Templates — the source legal
   documents the engine spec consolidates.
 

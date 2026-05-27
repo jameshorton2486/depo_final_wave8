@@ -1,6 +1,26 @@
+> DOCUMENT STATUS: CANONICAL CURRENT-STATE GOVERNANCE
+> Scope: conceptual data-model authority and layer vocabulary for DEPO-PRO.
+> Important: this document is not a byte-for-byte dump of the live SQLite schema. For actual persisted tables, see `backend/db/schema_v*.sql`. This document defines conceptual ownership and intended data relationships.
+
 # UFM Schema v1 — Canonical Lockdown
 
-Source of truth for all Depo-Pro data structures. All downstream code (FastAPI endpoints, SQLite migrations, export templates) derives from this document.
+Source of truth for the conceptual DEPO-PRO data model and layer boundaries.
+Current SQLite persistence implements this model through the append-only
+`backend/db/schema_v*.sql` migration chain rather than by mirroring every table
+name in this document exactly.
+
+Current persisted transcript-side tables include `transcript_jobs`,
+`transcript_speakers`, `transcript_utterances`, `transcript_words`,
+`transcript_participants`, `transcript_working_utterances`,
+`transcript_provenance_events`, `transcript_exhibits`,
+`transcript_snapshots`, `transcript_packages`, and `deposition_metadata`.
+
+This file is **not** migration authority. Do not use it to invent new tables,
+rename persisted tables, or infer that every conceptual object here already
+exists as a same-named SQLite table. Migration truth lives in the append-only
+`backend/db/schema_v*.sql` chain, while transcript lifecycle authority lives in
+`docs/TRANSCRIPT_ORCHESTRATION.md` and ownership authority lives in
+`docs/SYSTEM_OWNERSHIP.md`.
 
 ## Locked Decisions
 

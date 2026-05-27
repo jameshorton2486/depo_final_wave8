@@ -108,9 +108,12 @@ POST01_ABBREV_RE = re.compile(
 POST02_OBJECTION_RE = re.compile(r"Objection\.\s+")
 
 # POST-03 / POST-04 — honorific formatting. ONE space after the period
-# (Q2 decision — diverges from STD-SPK-01's two-space; see spec Q2).
-POST03_HONORIFIC_RE = re.compile(r"\b(Mr|Ms|Mrs)\.\s+")
-POST04_DOCTOR_BODY_RE = re.compile(r"\bMr\.\s+")  # placeholder; body uses same map
+# (Q2 decision). IGNORECASE catches pre-existing all-caps from Deepgram
+# (MR. / MS. / MRS. / DR.) so double-spaces are fixed, not just guarded.
+POST03_HONORIFIC_RE = re.compile(r"\b(Mr|Ms|Mrs|Dr)\.\s+", re.IGNORECASE)
+# POST-04 placeholder — Dr. spacing is now handled by POST-03 (IGNORECASE).
+# This constant is kept for spec traceability but is not called directly.
+POST04_DOCTOR_BODY_RE = re.compile(r"\bDr\.\s+", re.IGNORECASE)
 
 # POST-05 — "Miss Smith" -> "Ms. Smith" (skip when quoted).
 POST05_MISS_RE = re.compile(r"\bMiss\s+(?=[A-Z])")

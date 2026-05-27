@@ -171,6 +171,22 @@ async function startSequentialIngestion() {
         showToast("Save Stage 1 Intake before transcript ingestion. A valid case and session are required.", "red");
         return;
     }
+    // Warn if Stage 1 has no keyterms — Deepgram accuracy depends on vocabulary boosting.
+    var keytermCount = (state.stage1 && state.stage1.keytermEntries)
+        ? state.stage1.keytermEntries.length
+        : 0;
+    if (keytermCount === 0) {
+        var proceed = window.confirm(
+            'No keyterms are set for this case.\n\n' +
+            'Deepgram uses your keyterm dictionary (names, legal terms, case-specific ' +
+            'vocabulary) to improve transcription accuracy. Without it, uncommon names ' +
+            'and terms may be misrecognised.\n\n' +
+            'To add keyterms: return to Stage 1, paste scheduling notes or a NOD, ' +
+            'click Parse, then Save.\n\n' +
+            'Continue without keyterms?'
+        );
+        if (!proceed) return;
+    }
     if (state.fileQueue.length === 0 || state.isQueueProcessing) return;
 
     state.isQueueProcessing = true;
@@ -867,3 +883,7 @@ window.stopZoomStreaming = stopZoomStreaming;
 window.runAudioVisualizerAnimation = runAudioVisualizerAnimation;
 window.runLiveTestimonySimulation = runLiveTestimonySimulation;
 window.handleZoomCredentialsSubmit = handleZoomCredentialsSubmit;
+window.getActiveKeytermCount = function() {
+    return (state.stage1 && state.stage1.keytermEntries)
+        ? state.stage1.keytermEntries.length : 0;
+};

@@ -1,9 +1,14 @@
+> DOCUMENT STATUS: ACTIVE SUBSYSTEM SPEC
+> Scope: current pagination, geometry, page identity, and formatting-determinism rules.
+> This remains a live subsystem spec. Historical build-status language inside the document must not override current code or `docs/wave_status_report.md`.
+
 # Wave 19 — Physical Transcript Production (Pagination + Geometry)
 
-Status: **BUILT (Wave 19A Pagination Engine + Wave 19B Geometry profile). Geometry rendering into DOCX/PDF wires in the next pass.**
+Status: **ACTIVE SPEC. Wave 19 pagination and geometry are implemented and wired into the live export pipeline.**
 
-Companion to `docs/roadmap_ufm_production.md`. Primary formatting
-reference: `docs/ufm_layout_spec.md`.
+Companion to the live geometry and pagination code in `backend/geometry/` and
+`backend/pagination/`. The runtime authority for physical transcript production
+is the paginated export pipeline, not a separate unpublished layout spec.
 
 ## 0. Physical Transcript Production Principles
 
@@ -23,7 +28,7 @@ state. Wave 19 decides only where that fixed content sits on a physical
 page.
 
     semantic rendering        -> canonical renderer (done)
-    physical page production  -> Wave 19 (this wave)
+    physical page production  -> Wave 19 (done)
 
 **The format box is not transcript content. It is page furniture.**
 That distinction governs the whole wave: pagination and geometry
@@ -159,7 +164,7 @@ These rules are data-driven so UFM specifics can be set precisely.
 
 **Goal:** decorate the paginated Pages with UFM physical furniture.
 
-### Delivered (from `docs/ufm_layout_spec.md`)
+### Delivered
 
 - **The Format Box** -- solid top/bottom/left/right marginal lines.
 - **Line Numbers** -- 1-25, left of the box, every body page (one per
@@ -215,10 +220,9 @@ first.
   Engine (built first), Wave 19B = Geometry Layer. *Recommended: yes
   -- per your review.*
 - **Q19-2.** Exact UFM measurements -- margins, box dimensions, tab
-  stop positions, font, point size. `docs/ufm_layout_spec.md` is
-  qualitative; 19B needs exact numbers. Will you supply precise UFM
-  measurements, or should the spec propose standard Texas-UFM values
-  for your confirmation?
+  stop positions, font, point size. The live defaults now sit in
+  `backend/geometry/profile.py`, but James confirmation still governs
+  whether those values are the final legal authority.
 - **Q19-3.** Headers -- the page-heading text (witness, examination
   type) is dynamic. Confirm the data source: the confirmed speaker
   mapping plus examination tracking?

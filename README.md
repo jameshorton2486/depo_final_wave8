@@ -1,3 +1,7 @@
+> DOCUMENT STATUS: CANONICAL ROOT AUTHORITY
+> Scope: concise current-state overview, setup, launch, and top-level project layout.
+> Use this for human orientation and local setup. For governance, invariants, and authority boundaries, read `CLAUDE.md`.
+
 # DEPO-PRO
 
 Local-first desktop workspace for producing certified legal depositions.

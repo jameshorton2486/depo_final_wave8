@@ -1,3 +1,7 @@
+> DOCUMENT STATUS: CANONICAL SUBSYSTEM SPEC
+> Scope: deterministic correction-engine ownership, ordering, guards, flags, and working-layer mutation rules.
+> This governs `backend/corrections/`. It does not authorize alternate correction pipelines.
+
 # DEPO-PRO — Deterministic Transcript Correction Engine
 
 **Build Specification — Regex & Script Layer (No AI)**

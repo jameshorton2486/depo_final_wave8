@@ -1,3 +1,7 @@
+> DOCUMENT STATUS: TEMPORARY OPERATIONAL DOCUMENT
+> Scope: human validation checklist for current workflow testing.
+> This document is an operational checklist, not architecture authority.
+
 # MVP Workflow Validation Checklist
 
 Date: 2026-05-25  
@@ -31,7 +35,7 @@ Before starting:
 
 - Start the DEPO-PRO backend successfully.
 - Confirm the frontend loads and stage navigation works.
-- Confirm the current database has migrations through `schema_v11`.
+- Confirm the current database has migrations through `schema_v12`.
 - Confirm a test case can be created and a session can be saved.
 - Confirm at least one test audio file and one realistic NOD/sample intake note are available.
 - Confirm a writable export destination is available.

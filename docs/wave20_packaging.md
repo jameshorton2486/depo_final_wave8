@@ -1,13 +1,14 @@
+> DOCUMENT STATUS: ACTIVE SUBSYSTEM SPEC
+> Scope: package assembly, certification packaging, indices, manifest integrity, and administrative-page generation.
+> This remains a live subsystem spec. Historical build-status language inside the document must not override current code or `docs/wave_status_report.md`.
+
 # Wave 20 — Transcript Packaging Engine & Administrative Pages
 
-Status: **BUILT (engine core) — revised per James's two review passes.**
-The packaging engine core is implemented under `backend/packaging/`
-with a 35-test suite. DOCX rendering of pages and API/DB wiring are the
-next pass (see Build Status below).
+Status: **ACTIVE SPEC. The packaging engine, package persistence, certification path, and `/api/packages` router are implemented and wired.**
 
-Companion to `docs/roadmap_ufm_production.md` and
-`docs/wave19_ufm_layout.md`. Primary reference:
-`docs/ufm_administrative_pages.md`.
+Companion to `docs/wave19_ufm_layout.md`. Primary runtime authorities are
+`backend/packaging/`, `backend/api/packaging.py`, and the locked snapshot state
+engine in `backend/transcript_state/`.
 
 ## 0. Certified Package Lifecycle Principles
 
@@ -26,8 +27,8 @@ decided where every line sits. Wave 20 wraps that finished body into a
 legal artifact and manages that artifact through its lifecycle.
 
     semantic rendering        -> canonical renderer (done)
-    physical page production  -> Wave 19 (done/in progress)
-    certified-package lifecycle -> Wave 20 (this wave)
+    physical page production  -> Wave 19 (done)
+    certified-package lifecycle -> Wave 20 (done)
 
 ## 1. The Certified Transcript Package
 
@@ -152,17 +153,17 @@ mandatory fields.
 
 ## 9. Build Status
 
-**Built this wave (`backend/packaging/`, 35 tests):** the package
-model and state machine; the Index Generation Engine; the five
+**Implemented in the live repository (`backend/packaging/`):** the
+package model and state machine; the Index Generation Engine; the five
 administrative page generators; the manifest builder, deterministic
 hashing, and integrity verification; the validation pipeline; the
 Packaging Engine (`assemble_package`, `certify_package`) with the
 Package Ordering Authority.
 
-**Next pass (not built — depends on the Wave 19 geometry-into-DOCX
-wiring):** rendering package sections to a real DOCX/PDF; an
-`/api/packaging` router and persistence (mirroring `api/snapshots.py`);
-sourcing `metadata` and tracking events from real job/intake data.
+**Current-state note:** package assembly, package persistence,
+certification, snapshot-frozen exhibit indices, and the `/api/packages`
+router are live. The future-scope items below are not required for the
+current certified package chain to operate.
 
 ## 10. Future scope (acknowledged, not built)
 
@@ -183,7 +184,7 @@ errata, and certifications; non-certified package profiles.
 
 ## 12. Tests
 
-`tests/test_wave20_packaging.py` — 35 tests: state transitions,
+`tests/test_wave20_packaging.py` — current packaging tests cover state transitions,
 metadata validation, index generation (page-reference map, alphabetical
 and numeric ordering, stable references, determinism), administrative
 page generation, ordering authority (caption first / certificate last),

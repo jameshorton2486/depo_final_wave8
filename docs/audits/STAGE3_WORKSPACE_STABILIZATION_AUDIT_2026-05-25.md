@@ -1,3 +1,8 @@
+> DOCUMENT STATUS: SUPERSEDED ACTIVE DOCUMENT
+> Scope: historical Stage 3 audit retained for context.
+> Warning: this audit no longer reflects current code in several critical areas. Since it was written, DEPO-PRO added authoritative Stage 3 working-transcript persistence (`/api/transcripts/jobs/{job_id}/working-transcript`), snapshot restore of working transcript state, and packaging/export flows that render from locked snapshot state. Do not use this file as current architecture authority.
+> Current authority: `CLAUDE.md`, `docs/ACTIVE_SPEC_REGISTRY.md`, `docs/SYSTEM_OWNERSHIP.md`, `docs/TRANSCRIPT_ORCHESTRATION.md`, and `docs/EXPORT_AND_CERTIFICATION_PIPELINE.md`.
+
 # Stage 3 Workspace Stabilization Audit
 
 Date: 2026-05-25  

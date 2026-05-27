@@ -78,6 +78,7 @@ npm-debug.log*
 *.sqlite3-wal
 *.sqlite3-shm
 
+data/
 data/sqlite/*.db
 data/sqlite/*.db-journal
 data/sqlite/*.db-wal

@@ -1,4 +1,19 @@
+> DOCUMENT STATUS: CANONICAL CURRENT-STATE GOVERNANCE
+> Scope: active blocker, policy-decision, and unresolved-authority register.
+> Historical resolved blockers are preserved for context, but this document should be maintained as the current decision register.
+
 # BLOCKERS.md — Decisions and Dependencies Needing James
+
+## Current Use
+
+This file is the active policy-decision and blocker register. Resolved blockers
+remain below for historical decision context, but they are not active
+implementation blockers unless explicitly reopened.
+
+## Active Policy Questions
+
+- **Q20-6** — confirm whether the current Stage 5/packaging required-field set
+  is the final James-approved legal set or whether it should be broadened.
 
 _Updated 2026-05-22. **All five blockers are now RESOLVED.** BLOCKER-3
 has a data-capture follow-on noted below._
@@ -87,5 +102,8 @@ numbers).
 
 ---
 
-_All five blockers resolved. Remaining open work: the BLOCKER-3
-data-capture path for the bracketed certificate/caption fields._
+## Resolved Blocker History
+
+_All five blockers are resolved. Remaining open work is no longer an
+implementation-path blocker; it is the James-confirmation policy
+question around Q20-6 and the exact final required-field set._

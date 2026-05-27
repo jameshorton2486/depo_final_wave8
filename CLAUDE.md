@@ -1,3 +1,7 @@
+> DOCUMENT STATUS: CANONICAL ROOT AUTHORITY
+> Scope: repository-wide governance, transcript-safety invariants, documentation hierarchy, and agent work rules.
+> Read this first. If another active document conflicts with this one, this file wins unless it explicitly defers to a named canonical subsystem spec or active subsystem spec.
+
 # CLAUDE.md — Agent Onboarding & Documentation Authority
 
 > **Read this file first, before any other documentation in this repository.**
@@ -41,6 +45,28 @@ when explicitly investigating project history.
 If you need the current state of the system, items 1-4 are the answer. Item 5
 is consulted per-task. Item 6 is never consulted to learn "what is true now."
 
+### 2A. Active document classes
+
+DEPO-PRO uses six live documentation classes. Agents must not treat them as
+interchangeable:
+
+1. **Root governance authority** — repository-wide governance and current-state
+   hierarchy enforcement.
+2. **Canonical contract** — the primary current contract for one concern or
+   subsystem.
+3. **Active subsystem spec** — still-governing subsystem design/behavior docs
+   that remain relevant to live code, but are narrower than root authority.
+4. **Active reference** — setup guides, commands, and operational context that
+   do not own architecture.
+5. **Temporary operational document** — validation checklists, live logs, and
+   stabilization instruments that help operations but must eventually expire,
+   be superseded, or be archived.
+6. **Superseded active document** — retained in active locations for provenance
+   only; explicitly not safe as current truth.
+
+Audits and validation logs are never architecture authority. They may report on
+the system accurately or inaccurately, but they do not own it.
+
 ---
 
 ## 3. Canonical documents
@@ -53,6 +79,11 @@ exactly one concern. If you change behavior, update the matching canonical doc.
 | Human overview & setup | `README.md` |
 | Wave / feature status & current priorities | `docs/wave_status_report.md` |
 | Data model | `docs/ufm_schema_v1.md` |
+| System ownership map | `docs/SYSTEM_OWNERSHIP.md` |
+| Transcript orchestration & layer lifecycle | `docs/TRANSCRIPT_ORCHESTRATION.md` |
+| Export / certification pipeline ownership | `docs/EXPORT_AND_CERTIFICATION_PIPELINE.md` |
+| Active document registry | `docs/ACTIVE_SPEC_REGISTRY.md` |
+| Governance maintenance lifecycle | `docs/GOVERNANCE_MAINTENANCE_RULES.md` |
 | Transcript safety invariants | `docs/architecture/transcript_engine/TRANSCRIPT_ENGINE_RULES.md` |
 | Correction engine spec | `docs/architecture/transcript_engine/deterministic_correction_engine_spec.md` |
 | Diff / diagnostics spec | `docs/architecture/transcript_engine/transcript_diff_harness_spec.md` |
@@ -64,6 +95,31 @@ Do not record test counts or a frozen priority list anywhere else (including in
 this file): such lists go stale within days and become the next source of
 drift. To learn the current test count, run the suite (see Section 8). To learn
 current priorities, read `wave_status_report.md` and `BLOCKERS.md`.
+
+### 3A. Active subsystem specs
+
+The following are live subsystem specs that still govern code and must not be
+treated as historical build records:
+
+| Concern | Active subsystem spec |
+|---|---|
+| NOD parsing contract | `docs/nod_parser_spec.md` |
+| Pagination / geometry behavior | `docs/wave19_ufm_layout.md` |
+| Packaging / certification package behavior | `docs/wave20_packaging.md` |
+
+These specs do not outrank the canonical root authorities above, but they do
+govern their named subsystem unless superseded by a newer canonical subsystem
+spec.
+
+### 3B. Active references and temporary operational docs
+
+These documents are useful, but they do not own architecture:
+
+- `development_workflow.md` — runtime transcription trust modes.
+- `docs/development_workflow.md` — developer setup and local maintenance.
+- `docs/audits/MVP_WORKFLOW_VALIDATION_CHECKLIST.md` — manual validation checklist.
+- `docs/audits/REAL_WORLD_VALIDATION_LOG.md` — active operational validation log.
+- `docs/audits/STAGE3_WORKSPACE_STABILIZATION_AUDIT_2026-05-25.md` — historical-in-place audit that may no longer reflect current code; verify before use.
 
 ---
 
@@ -123,6 +179,10 @@ these is wrong even if tests pass.
   (`backend/diagnostics/`) never writes to the raw or working transcript.
 - **Mutation detection gates certification.** Unexplained transcript drift
   blocks certification; a logged, attributable change does not.
+- **No parallel authority systems.** When a concern already has a code
+  authority or a canonical doc owner, extend it. Do not create a second
+  transcript pipeline, pagination engine, certification path, working-text
+  store, or governance doc that quietly competes with the first.
 
 ### 5A. Transcript semantic safety — verbatim-first
 
@@ -194,6 +254,11 @@ transcript-diff and mutation-detection checks afterward.
 A change in any of these zones is not complete until transcript integrity,
 mutation detection, and the relevant regression tests have been verified.
 
+These zones also trigger stricter documentation discipline: if a doc touching
+one of these areas is stale, ambiguous, or contradicted by code, do not use it
+as implementation authority without first reconciling it against the current
+canonical docs and the live modules.
+
 ---
 
 ## 8. How agents must work
@@ -221,10 +286,29 @@ architecture layers, move subsystem ownership, rewrite working orchestration,
 or collapse the layered transcript states. Reuse existing architecture wherever
 possible.
 
+### 8B.1 No-silent-refactor rule
+
+Do not use documentation cleanup, status reconciliation, or “governance”
+changes as cover for architecture reinterpretation. If a repair would require
+changing what module owns a concern, what layer is authoritative, or what a
+certification/export path means, stop and ask.
+
 ### 8C. Stop-and-Ask
 
 Before a schema migration, a file deletion, the creation of a new subsystem, or
 any ambiguous-scope decision — stop and ask the human. Do not guess.
+
+Stop immediately and report if:
+
+- canonical ownership is ambiguous;
+- two active docs appear to govern the same live behavior differently;
+- transcript-layer ownership is unclear;
+- mutation authority or certification authority is unclear;
+- pagination, geometry, or export authority is split across parallel systems;
+- code contradicts a canonical invariant;
+- a doc appears both historical and operationally current;
+- a requested “fix” would require architecture reinterpretation rather than
+  factual documentation repair.
 
 ### 8D. Testing
 

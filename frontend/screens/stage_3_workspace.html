@@ -145,6 +145,11 @@
                         <button id="workspaceSaveBtn" onclick="manualSaveWorkspaceTranscript()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 border border-transparent rounded-lg text-xs font-semibold text-white transition-all flex items-center gap-1.5 shadow-sm">
                             Save Transcript
                         </button>
+                        <button onclick="copyTranscriptToClipboard()"
+                            class="px-3.5 py-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition-all flex items-center gap-1.5"
+                            title="Copy full transcript to clipboard">
+                            Copy Transcript
+                        </button>
                         <button onclick="toggleTranscriptTheme()" class="px-3.5 py-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-lg text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-all flex items-center gap-1.5" id="btnThemeToggle">
                             📁 Toggle MS Word Layout
                         </button>

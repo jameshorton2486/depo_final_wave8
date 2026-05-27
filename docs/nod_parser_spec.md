@@ -1,3 +1,7 @@
+> DOCUMENT STATUS: ACTIVE SUBSYSTEM SPEC
+> Scope: current NOD parser extraction contract, keyterm generation contract, and canonical parser test case.
+> This is an active parser spec, not an archived build record.
+
 Notice of Deposition (NOD) Parser Specification
 
 ## Purpose

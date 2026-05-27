@@ -45,6 +45,25 @@ def test_post03_honorific_one_space_caps():
     assert any(e.rule_id == "POST-03" for e in log)
 
 
+def test_post03_honorific_allcaps_double_space_fixed():
+    # All-caps honorifics with double spaces (common from Deepgram output)
+    # must be normalized to exactly one space. This is the case POST-03
+    # previously missed without re.IGNORECASE.
+    out, log = typography.apply("BY MR.  NUNEZ: Good morning.", "u1", _Ctx())
+    assert "MR.  " not in out
+    assert "MR. NUNEZ" in out
+    assert any(e.rule_id == "POST-03" for e in log)
+
+
+def test_post03_doctor_honorific_normalized():
+    # Dr. must be normalized the same way as Mr./Ms./Mrs. — uppercased,
+    # one space. POST-03 now covers Dr. via IGNORECASE.
+    out, log = typography.apply("I consulted with Dr.  Walsh about this.", "u1", _Ctx())
+    assert "DR.  " not in out
+    assert "DR. Walsh" in out
+    assert any(e.rule_id == "POST-03" for e in log)
+
+
 def test_post05_miss_normalized():
     out, log = typography.apply("Miss Garcia testified", "u1", _Ctx())
     assert "Ms. Garcia" in out

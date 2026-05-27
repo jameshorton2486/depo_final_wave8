@@ -184,6 +184,81 @@
             await persistWorkspaceTranscript('manual_save');
         }
 
+        /**
+         * Copy the current transcript to the clipboard as plain legal-style text.
+         * Formats colloquy as "SPEAKER: Text", Q lines as "Q.   Text",
+         * A lines as "A.   Text". Blank system rows are skipped.
+         * Falls back to a textarea + execCommand for environments where
+         * navigator.clipboard is unavailable (e.g. non-HTTPS).
+         */
+        function copyTranscriptToClipboard() {
+            var lines = (state.transcriptLines || []).filter(function(l) {
+                return l && l.jobId; // skip SYSTEM INDEXER dividers
+            });
+
+            if (lines.length === 0) {
+                showToast('No transcript loaded to copy.', 'amber');
+                return;
+            }
+
+            var parts = [];
+            var lastType = null;
+
+            lines.forEach(function(line) {
+                var text = (line.text || '').trim();
+                if (!text) return;
+
+                var formatted;
+                if (line.type === 'Q') {
+                    // Add a blank line before a new question block
+                    if (lastType !== 'Q') parts.push('');
+                    formatted = 'Q.\t' + text;
+                } else if (line.type === 'A') {
+                    formatted = 'A.\t' + text;
+                } else {
+                    // Colloquy: "SPEAKER: Text"
+                    var normalizedSpeaker = _normalizeHonorificSpacing(line.speaker || '');
+                    var speakerPrefix = (normalizedSpeaker && !normalizedSpeaker.startsWith('Speaker '))
+                        ? normalizedSpeaker.toUpperCase() + ':  '
+                        : '';
+                    if (lastType !== 'colloquy') parts.push('');
+                    formatted = speakerPrefix + text;
+                }
+
+                parts.push(formatted);
+                lastType = line.type === 'Q' ? 'Q' : line.type === 'A' ? 'A' : 'colloquy';
+            });
+
+            var fullText = parts.join('\n').trim();
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(fullText).then(function() {
+                    showToast('Transcript copied to clipboard.', 'emerald');
+                }).catch(function(err) {
+                    _fallbackCopyToClipboard(fullText);
+                });
+            } else {
+                _fallbackCopyToClipboard(fullText);
+            }
+        }
+
+        function _fallbackCopyToClipboard(text) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try {
+                document.execCommand('copy');
+                showToast('Transcript copied to clipboard.', 'emerald');
+            } catch (err) {
+                showToast('Copy failed — select and copy manually.', 'red');
+            }
+            document.body.removeChild(ta);
+        }
+
         function updateTemperatureSlider(val) {
             const sliderLabel = document.getElementById('sliderVal');
             if (val == 1) sliderLabel.innerText = "Strict (0.2)";
@@ -195,6 +270,7 @@
         function toggleTranscriptTheme() {
             const themeBtn = document.getElementById('btnThemeToggle');
             const canvas = document.getElementById('compiledUFMTranscriptContainer');
+            const canvasWrapper = document.getElementById('transcriptCanvas');
             const lineRuleLeft = document.getElementById('lineRuleLeft');
             const lineRuleRight = document.getElementById('lineRuleRight');
 
@@ -205,6 +281,7 @@
 
                 // Add MS Word Styling
                 canvas.className = "w-full max-w-3xl ms-word-page select-text";
+                canvasWrapper.classList.add('word-mode-canvas-bg');
                 lineRuleLeft.className = "ms-word-redline-left pointer-events-none";
                 lineRuleRight.className = "ms-word-redline-right pointer-events-none";
 
@@ -216,6 +293,7 @@
 
                 // Remove MS Word Styling
                 canvas.className = "w-full max-w-3xl bg-[#0a0f18] text-slate-300 border border-slate-800/80 shadow-2xl rounded-xl p-8 font-mono text-sm leading-8 relative min-h-[1000px] select-text";
+                canvasWrapper.classList.remove('word-mode-canvas-bg');
                 lineRuleLeft.className = "absolute top-0 bottom-0 left-12 ufm-rule-left pointer-events-none";
                 lineRuleRight.className = "absolute top-0 bottom-0 right-12 ufm-rule-right pointer-events-none";
 
@@ -264,7 +342,7 @@
                 const gutter = document.createElement('div');
                 let gutterColor = "bg-emerald-500";
                 if (line.confidence < 0.8) gutterColor = "bg-amber-500 animate-pulse";
-                gutter.className = `w-1 self-stretch rounded-full ${gutterColor} select-none mr-2`;
+                gutter.className = `transcript-gutter w-1 self-stretch rounded-full ${gutterColor} select-none mr-2`;
 
                 // Main textual column
                 const textBlock = document.createElement('div');
@@ -272,9 +350,9 @@
 
                 let prefixHtml = "";
                 if (!isSystemRow && line.type === "Q") {
-                    prefixHtml = `<span class="text-indigo-600 font-bold mr-2 select-none">Q.</span>`;
+                    prefixHtml = `<span class="transcript-q-prefix text-indigo-600 font-bold mr-2 select-none">Q.</span>`;
                 } else if (!isSystemRow && line.type === "A") {
-                    prefixHtml = `<span class="text-cyan-600 font-bold mr-2 select-none">A.</span>`;
+                    prefixHtml = `<span class="transcript-a-prefix text-cyan-600 font-bold mr-2 select-none">A.</span>`;
                 }
 
                 // Highlight low confidence boundaries
@@ -300,24 +378,29 @@
 
                 const sourceBadge = isOverride
                     ? mutationSource === 'ai_apply'
-                        ? `<span class="text-[8px] px-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">AI APPLIED</span>`
+                        ? `<span class="transcript-source-badge text-[8px] px-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">AI APPLIED</span>`
                         : mutationSource === 'snapshot_rollback'
-                            ? `<span class="text-[8px] px-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">SNAPSHOT RESTORED</span>`
-                            : `<span class="text-[8px] px-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">WORKING OVERRIDE</span>`
+                            ? `<span class="transcript-source-badge text-[8px] px-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">SNAPSHOT RESTORED</span>`
+                            : `<span class="transcript-source-badge text-[8px] px-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">WORKING OVERRIDE</span>`
                     : '';
                 const speakerLabel = isSystemRow
                     ? 'WORKSPACE SYSTEM'
                     : (line.speaker || (line.speakerIndex != null ? `Speaker ${line.speakerIndex}` : 'Unassigned Speaker'));
+                // In Word mode, colloquy lines show speaker inline (meta line is hidden).
+                var colloquySpeakerHtml = '';
+                if (!isSystemRow && line.type !== 'Q' && line.type !== 'A') {
+                    colloquySpeakerHtml = `<span class="transcript-colloquy-speaker hidden mr-1">${_speakerMapEsc ? _speakerMapEsc(speakerLabel) : speakerLabel}:</span>`;
+                }
 
                 textBlock.innerHTML = `
-                    <div class="flex items-center gap-2 mb-1 select-none">
+                    <div class="transcript-meta flex items-center gap-2 mb-1 select-none">
                         <span class="text-[9px] font-bold text-slate-500 tracking-wider">${speakerLabel}</span>
                         ${sourceBadge}
                         ${line.exhibit ? `<span class="text-[8px] px-1 bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 rounded">EXHIBIT ${line.exhibit} MARKED</span>` : ''}
                         ${line.startTime != null && !isSystemRow ? `<span class="text-[8px] text-slate-600 font-mono">@ ${Number(line.startTime || 0).toFixed(1)}s</span>` : ''}
                     </div>
                     <div class="transcript-line outline-none focus:bg-indigo-500/5 focus:rounded p-0.5 whitespace-pre-wrap ${isSystemRow ? 'italic text-slate-500' : ''}" contenteditable="${!isSystemRow ? 'true' : 'false'}" spellcheck="false" onblur="handleTextEdit('${line.id}', this.innerHTML)">
-                        ${prefixHtml}${textContentHtml}
+                        ${colloquySpeakerHtml}${prefixHtml}${textContentHtml}
                     </div>
                 `;
 
@@ -726,13 +809,76 @@
             ).join("");
         }
 
+        /**
+         * Hard rule: after an honorific period there is exactly ONE space.
+         * Collapses any run of 2+ spaces that immediately follows MR./MS./MRS./DR.
+         * Case-insensitive. Applied defensively wherever honorific strings are
+         * displayed or copied, in case stored data pre-dates this rule.
+         *
+         * Examples:
+         *   "MR.  THOMAS"  -> "MR. THOMAS"
+         *   "DR.  WALSH"   -> "DR. WALSH"
+         *   "MS. ZAHN"     -> "MS. ZAHN"  (unchanged -- already correct)
+         */
+        function _normalizeHonorificSpacing(text) {
+            if (!text) return text;
+            return text.replace(/\b(MR|MS|MRS|DR)\.\s{2,}/gi, function(match, hon) {
+                return hon.toUpperCase() + '. ';
+            });
+        }
+
+        /**
+         * Parse a free-text name entry for a leading honorific.
+         * Accepts: "MR. THOMAS", "MR THOMAS", "Dr. Smith", "MS. JONES" etc.
+         * Returns { honorific, name } where honorific is one of MR/MS/MRS/DR (no dot)
+         * and name is the remainder with leading/trailing whitespace removed.
+         * If no recognized honorific prefix is found, honorific is "" and name is the
+         * full input.
+         */
+        function _parseNameAndHonorific(rawInput) {
+            var cleaned = (rawInput || '').trim();
+            var upper = cleaned.toUpperCase();
+            var prefixes = [
+                { prefix: 'MR.',  hon: 'MR'  },
+                { prefix: 'MS.',  hon: 'MS'  },
+                { prefix: 'MRS.', hon: 'MRS' },
+                { prefix: 'DR.',  hon: 'DR'  },
+                { prefix: 'MR ',  hon: 'MR'  },
+                { prefix: 'MS ',  hon: 'MS'  },
+                { prefix: 'MRS ', hon: 'MRS' },
+                { prefix: 'DR ',  hon: 'DR'  },
+            ];
+            for (var i = 0; i < prefixes.length; i++) {
+                var p = prefixes[i];
+                if (upper.startsWith(p.prefix)) {
+                    return {
+                        honorific: p.hon,
+                        name: cleaned.slice(p.prefix.length).trim(),
+                    };
+                }
+            }
+            return { honorific: '', name: cleaned };
+        }
+
         function setWorkspaceSpeakerAssignment(jobId, speakerIndex, field, value) {
             const sm = _speakerMapState();
             if (!sm.assignments[jobId]) sm.assignments[jobId] = {};
             if (!sm.assignments[jobId][speakerIndex]) {
                 sm.assignments[jobId][speakerIndex] = { role: "other", name: "", honorific: "" };
             }
-            sm.assignments[jobId][speakerIndex][field] = value;
+            if (field === 'name') {
+                // Auto-parse any leading honorific so the reporter can type
+                // "MR. THOMAS" without using a separate dropdown.
+                var parsed = _parseNameAndHonorific(value);
+                sm.assignments[jobId][speakerIndex]['name'] = parsed.name;
+                // Only overwrite the stored honorific if we found one in the
+                // typed name; otherwise preserve whatever is already stored.
+                if (parsed.honorific) {
+                    sm.assignments[jobId][speakerIndex]['honorific'] = parsed.honorific;
+                }
+            } else {
+                sm.assignments[jobId][speakerIndex][field] = value;
+            }
         }
 
         function _buildWorkspaceParticipants(jobId) {
@@ -792,15 +938,9 @@
                                 <select onchange="setWorkspaceSpeakerAssignment('${view.job_id}', ${d.speaker_index}, 'role', this.value)" class="bg-slate-900 border border-slate-700 rounded-lg text-[10px] text-slate-200 px-2 py-1.5 focus:border-indigo-500 focus:outline-none">
                                     ${_speakerMapRoleOptions(view.roles, a.role)}
                                 </select>
-                                <select onchange="setWorkspaceSpeakerAssignment('${view.job_id}', ${d.speaker_index}, 'honorific', this.value)" class="bg-slate-900 border border-slate-700 rounded-lg text-[10px] text-slate-200 px-2 py-1.5 focus:border-indigo-500 focus:outline-none">
-                                    <option value="">No honorific</option>
-                                    <option value="MR"${a.honorific === "MR" ? " selected" : ""}>MR</option>
-                                    <option value="MS"${a.honorific === "MS" ? " selected" : ""}>MS</option>
-                                    <option value="MRS"${a.honorific === "MRS" ? " selected" : ""}>MRS</option>
-                                    <option value="DR"${a.honorific === "DR" ? " selected" : ""}>DR</option>
-                                </select>
-                                <input type="text" value="${_speakerMapEsc(a.name)}" placeholder="Name" oninput="setWorkspaceSpeakerAssignment('${view.job_id}', ${d.speaker_index}, 'name', this.value)" class="bg-slate-900 border border-slate-700 rounded-lg text-[10px] text-slate-200 px-2 py-1.5 flex-1 min-w-[10rem] focus:border-indigo-500 focus:outline-none placeholder:text-slate-600">
+                                <input type="text" value="${_speakerMapEsc(_normalizeHonorificSpacing(a.honorific ? a.honorific + '. ' + (a.name || '') : (a.name || '')))}" placeholder="e.g. MR. THOMAS or DR. SMITH" oninput="setWorkspaceSpeakerAssignment('${view.job_id}', ${d.speaker_index}, 'name', this.value)" class="bg-slate-900 border border-slate-700 rounded-lg text-[10px] text-slate-200 px-2 py-1.5 flex-1 min-w-[10rem] focus:border-indigo-500 focus:outline-none placeholder:text-slate-600">
                             </div>
+                            <p class="mt-2 text-[9px] text-slate-500">Include honorific prefix in the name (e.g. MR. THOMAS, DR. SMITH).</p>
                         </div>
                     `;
                 }).join("");
@@ -1181,10 +1321,13 @@ window.changeAudioSpeed = changeAudioSpeed;
 window.skipAudio = skipAudio;
 window.renderCorrectionMemory = renderCorrectionMemory;
 window.renderWorkspaceSaveStatus = renderWorkspaceSaveStatus;
+window.copyTranscriptToClipboard = copyTranscriptToClipboard;
 window.manualSaveWorkspaceTranscript = manualSaveWorkspaceTranscript;
 window.reloadWorkspaceTranscript = reloadWorkspaceTranscript;
 window.loadWorkspaceSpeakerMapping = loadWorkspaceSpeakerMapping;
 window.saveWorkspaceSpeakerMapping = saveWorkspaceSpeakerMapping;
+window._normalizeHonorificSpacing = _normalizeHonorificSpacing;
+window._parseNameAndHonorific = _parseNameAndHonorific;
 window.setWorkspaceSpeakerAssignment = setWorkspaceSpeakerAssignment;
 window.loadWorkspaceSnapshots = loadWorkspaceSnapshots;
 window.createWorkspaceSnapshot = createWorkspaceSnapshot;

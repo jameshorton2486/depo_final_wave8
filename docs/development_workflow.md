@@ -1,3 +1,7 @@
+> DOCUMENT STATUS: ACTIVE REFERENCE
+> Scope: developer setup, local maintenance, DB rebuild workflow, and daily commands.
+> This file is for local development workflow. It does not own runtime transcript trust behavior; that lives in the root `development_workflow.md`.
+
 # Development Workflow
 
 ## Setup
