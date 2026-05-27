@@ -110,6 +110,11 @@ data/depo_pro.sqlite3-shm
 # Personal scratch files
 # =========================
 MY_CHEATS.txt
+application.txt
+deepgram_no_utterances.txt
+deepgram_utterances.txt
+collect_prompt_files.py
+prompt_files/
 
 # =========================
 # Testing / Pytest
