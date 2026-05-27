@@ -36,6 +36,22 @@ Rules:
 - [ ] Confirm case-level keyterms are present for downstream use.
 - [ ] Confirm terminology survives case reload and app restart.
 
+### Operator Transparency
+- [ ] Case-context banner: loading an existing case shows the EDITING
+      banner with cause number and last-saved timestamp; clicking
+      "Start New Case" clears state and re-renders as NEW CASE.
+- [ ] Three-state badges: parser-populated fields render AUTO-POPULATED
+      (amber); clicking "Confirm" promotes to ✓ CONFIRMED (green);
+      editing a confirmed field reverts to AUTO-POPULATED; reloading
+      preserves confirmations.
+- [ ] Missing-field enumeration: validation summary lists each missing
+      field by label and the header reads `{N} of 16 required fields
+      populated` (no graded score / risk indicator).
+- [ ] Deepgram Request Preview: opens read-only modal; `deepgram_request`
+      matches `DEEPGRAM_PARAMS`; no Save / Apply affordance.
+- [ ] UFM Payload Preview: opens read-only modal; shows `ufm_metadata`,
+      `field_sources`, `field_confirmations`, `missing_required_fields`.
+
 ## Stage 2
 
 ### Transcript Generation

@@ -128,6 +128,11 @@ Wave 21 moved the project from integration work into MVP validation:
 2. certification validation for Stage 5 statutory fields
 3. explicit offline transcription mode for manual validation
 4. documentation reconciliation with the verified codebase
+5. Stage 1 operator transparency (Phases 1–4): case-context banner,
+   three-state validation badges (MISSING / AUTO-POPULATED / CONFIRMED),
+   deterministic missing-field enumeration, and derived Deepgram-request
+   and UFM-payload preview endpoints. Additive — no transcript-engine
+   modules touched.
 
 The next work should come from `docs/audits/REAL_WORLD_VALIDATION_LOG.md`,
 not from assumptions that Waves 19–20 are still unwired.
