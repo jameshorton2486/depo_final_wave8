@@ -52,6 +52,27 @@ Rules:
 - [ ] UFM Payload Preview: opens read-only modal; shows `ufm_metadata`,
       `field_sources`, `field_confirmations`, `missing_required_fields`.
 
+### Stage 1 UX Polish
+- [ ] Save Intake button is visible on first paint of Stage 1
+- [ ] Clicking Save Intake on a new case creates a backend record and
+      updates banner from State A to State B
+- [ ] Editing any field after save transitions banner from State B to
+      State C; saving again returns to State B
+- [ ] View UFM Payload on an unsaved case shows the inline Save Now
+      message, not a 404 error
+- [ ] Save Now inside the UFM modal completes the save and renders the
+      preview without closing the modal
+- [ ] Cancel inside the UFM modal closes without saving and without errors
+- [ ] Pasted-notes placeholder is visible when the textarea is empty
+- [ ] Helper text under the textarea is visible at all times
+- [ ] Parsing notes with no labels shows exactly one informational toast
+      (not three)
+- [ ] Parsing notes with labels shows exactly one success toast with the
+      field count
+- [ ] Deepgram Preview modal still works on saved cases (regression check
+      from Phase 4)
+- [ ] Existing 3-state badges (AUTO · CONFIRM? / MISSING) are unchanged
+
 ## Stage 2
 
 ### Transcript Generation

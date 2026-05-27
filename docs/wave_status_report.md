@@ -133,6 +133,8 @@ Wave 21 moved the project from integration work into MVP validation:
    deterministic missing-field enumeration, and derived Deepgram-request
    and UFM-payload preview endpoints. Additive — no transcript-engine
    modules touched.
+6. Stage 1 UX polish (Save Intake button, saved/unsaved banner, UFM
+   modal recovery, parser feedback) shipped on stage1/ux-polish.
 
 The next work should come from `docs/audits/REAL_WORLD_VALIDATION_LOG.md`,
 not from assumptions that Waves 19–20 are still unwired.
