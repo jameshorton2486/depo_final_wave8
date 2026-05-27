@@ -68,10 +68,11 @@
             correctionsMemory: [],
             provenance: [],
             activePlayback: false,
-            playbackInterval: null,
-            playbackLineIdx: 0,
             playbackSpeed: 1.0,
+            playbackTransport: null,
             focusedLineId: null,
+            workspaceAudioDurations: {},
+            workspaceTranscriptWordsByJob: {},
 
             // Audio input streaming configuration
             isStreaming: false,

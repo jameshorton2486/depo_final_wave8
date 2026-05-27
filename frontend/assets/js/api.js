@@ -340,6 +340,9 @@
         getTranscriptContent(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/content`);
         },
+        getTranscriptMediaUrl(jobId) {
+            return `${API_BASE}/transcripts/jobs/${encodeURIComponent(jobId)}/media`;
+        },
         listTranscriptExhibits(jobId) {
             return _fetch('GET', `/exhibits/jobs/${encodeURIComponent(jobId)}`);
         },

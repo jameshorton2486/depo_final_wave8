@@ -7,6 +7,8 @@ redirects SQLite and the data root into a tmp_path.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 
 def _create_bound_case_session(client):
     case = client.post(
@@ -110,6 +112,37 @@ def test_get_content_returns_canonical_objects(client):
     assert first_utt["raw_text"] == first_utt["text"]
     assert first_utt["working_text"] is None
     assert first_utt["is_working_override"] is False
+
+
+def test_media_endpoint_streams_full_file_and_range(client):
+    job = _upload(client).json()
+    media_path = Path(job["audio_path"])
+    expected = media_path.read_bytes()
+
+    full = client.get(f"/api/transcripts/jobs/{job['job_id']}/media")
+    assert full.status_code == 200
+    assert full.headers["accept-ranges"] == "bytes"
+    assert full.headers["content-length"] == str(len(expected))
+    assert full.content == expected
+
+    partial = client.get(
+        f"/api/transcripts/jobs/{job['job_id']}/media",
+        headers={"Range": "bytes=0-9"},
+    )
+    assert partial.status_code == 206
+    assert partial.headers["accept-ranges"] == "bytes"
+    assert partial.headers["content-range"] == f"bytes 0-9/{len(expected)}"
+    assert partial.content == expected[:10]
+
+
+def test_media_endpoint_missing_audio_returns_explicit_404(client):
+    job = _upload(client).json()
+    media_path = Path(job["audio_path"])
+    media_path.unlink()
+
+    res = client.get(f"/api/transcripts/jobs/{job['job_id']}/media")
+    assert res.status_code == 404
+    assert "audio no longer retained for this job" in res.json()["detail"].lower()
 
 
 def test_raw_and_working_packets(client):

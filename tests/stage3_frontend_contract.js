@@ -40,6 +40,7 @@ class FakeElement {
     this.children = [];
     this.style = {};
     this.attributes = {};
+    this._listeners = new Map();
   }
   appendChild(child) {
     this.children.push(child);
@@ -48,10 +49,57 @@ class FakeElement {
   setAttribute(name, value) {
     this.attributes[name] = value;
   }
+  removeAttribute(name) {
+    delete this.attributes[name];
+    if (name === 'src') this.src = '';
+  }
+  addEventListener(name, handler) {
+    if (!this._listeners.has(name)) {
+      this._listeners.set(name, []);
+    }
+    this._listeners.get(name).push(handler);
+  }
+  dispatchEvent(event) {
+    const type = typeof event === 'string' ? event : event.type;
+    const handlers = this._listeners.get(type) || [];
+    handlers.forEach((handler) => handler({ type, target: this }));
+  }
+}
+
+class FakeMediaElement extends FakeElement {
+  constructor(context, tagName = 'audio') {
+    super(tagName);
+    this._context = context;
+    this.currentTime = 0;
+    this.duration = 0;
+    this.playbackRate = 1.0;
+    this.paused = true;
+    this.src = '';
+  }
+  load() {
+    const config = this._context.__mediaRegistry[this.src] || null;
+    if (!this.src || (config && config.missing)) {
+      this.dispatchEvent('error');
+      return;
+    }
+    this.duration = config && Number.isFinite(config.duration) ? config.duration : 0;
+    this.currentTime = config && Number.isFinite(config.currentTime) ? config.currentTime : this.currentTime;
+    this.dispatchEvent('loadedmetadata');
+  }
+  play() {
+    this.paused = false;
+    this.dispatchEvent('play');
+    return Promise.resolve();
+  }
+  pause() {
+    this.paused = true;
+    this.dispatchEvent('pause');
+  }
 }
 
 function createContext() {
   const elements = new Map();
+  const mediaRegistry = {};
   const ensure = (id) => {
     if (!elements.has(id)) {
       elements.set(id, new FakeElement('div', id));
@@ -64,6 +112,9 @@ function createContext() {
       return ensure(id);
     },
     createElement(tag) {
+      if (String(tag).toLowerCase() === 'audio' || String(tag).toLowerCase() === 'video') {
+        return new FakeMediaElement(context, tag);
+      }
       return new FakeElement(tag);
     },
     body: new FakeElement('body'),
@@ -119,6 +170,7 @@ function createContext() {
   context.window.addProvenanceRecord = context.addProvenanceRecord;
   context.globalThis = context;
   context.__elements = elements;
+  context.__mediaRegistry = mediaRegistry;
   return context;
 }
 
@@ -138,6 +190,23 @@ function seedStage3Elements(context) {
     'workspaceSpeakerMappingStatus',
     'aiSuggestionsList',
     'flagCount',
+    'audioTimeLabel',
+    'playheadIndicator',
+    'confidenceScoreLabel',
+    'cursorLineTracker',
+    'modeBannerText',
+    'toolSectionAudio',
+    'toolSectionSuggestions',
+    'toolSectionFormatting',
+    'rightPanelTitle',
+    'modeBtnEdit',
+    'modeBtnSuggestions',
+    'modeBtnAudio',
+    'modeBtnFormatting',
+    'audioPlaybackNote',
+    'workspaceMediaMount',
+    'audioSpeedLabel',
+    'playIconSvg',
   ].forEach((id) => context.document.getElementById(id));
 }
 
@@ -153,8 +222,13 @@ async function testWorkspaceLoadPreservesOneLinePerUtteranceAndGroupsHeadersAtRe
   seedStage3Elements(context);
 
   context.window.api = {
+    getTranscriptMediaUrl: (jobId) => {
+      const url = `/api/transcripts/jobs/${jobId}/media`;
+      context.__mediaRegistry[url] = { duration: 8838 };
+      return url;
+    },
     getTranscriptContent: async () => ({
-      job: { job_id: 'job-1', source_filename: 'sample.mp3' },
+      job: { job_id: 'job-1', source_filename: 'sample.mp3', duration_seconds: 8838 },
       speakers: [
         { speaker_index: 0, speaker_label: 'Speaker 0' },
         { speaker_index: 1, speaker_label: 'Speaker 1' },
@@ -226,6 +300,12 @@ async function testWorkspaceLoadPreservesOneLinePerUtteranceAndGroupsHeadersAtRe
   assert.ok(firstHtml.includes('Speaker 0'));
   assert.ok(!secondHtml.includes('Speaker 0'));
   assert.ok(thirdHtml.includes('Speaker 1'));
+
+  context.focusLineRow('utt-3');
+  assert.strictEqual(
+    context.document.getElementById('audioTimeLabel').innerText,
+    '00:00 / 02:27:18',
+  );
 }
 
 async function testCrossSpeakerBannerAndLockedReviewFlagsRender() {
@@ -302,9 +382,176 @@ async function testCrossSpeakerBannerAndLockedReviewFlagsRender() {
   assert.ok(!cardHtml.includes('Reject</button>'));
 }
 
+async function testTranscriptNavigationRelabelsRender() {
+  const context = createContext();
+  seedStage3Elements(context);
+
+  loadScript(context, 'frontend/assets/js/screens/stage_3.js');
+
+  context.setWorkspaceMode('edit');
+  assert.strictEqual(
+    context.document.getElementById('rightPanelTitle').innerText,
+    'Transcript Navigation Preview',
+  );
+
+  context.setWorkspaceMode('audio');
+  assert.strictEqual(
+    context.document.getElementById('rightPanelTitle').innerText,
+    'Transcript Navigation Preview',
+  );
+  assert.strictEqual(
+    context.document.getElementById('modeBannerText').innerText,
+    'Transcript Navigation Preview: click a line to seek retained media and follow playback in real time.',
+  );
+}
+
+async function testRealPlaybackControlsAndHighlighting() {
+  const context = createContext();
+  seedStage3Elements(context);
+
+  context.window.api = {
+    getTranscriptMediaUrl: (jobId) => {
+      const url = `/api/transcripts/jobs/${jobId}/media`;
+      context.__mediaRegistry[url] = { duration: 8838 };
+      return url;
+    },
+    getTranscriptContent: async () => ({
+      job: { job_id: 'job-1', source_filename: 'sample.mp3', duration_seconds: 8838 },
+      speakers: [],
+      participants: [],
+      utterances: [
+        {
+          utterance_id: 'utt-1',
+          speaker_index: 0,
+          speaker_label: 'Speaker 0',
+          text: 'First fragment.',
+          raw_text: 'First fragment.',
+          working_text: null,
+          is_working_override: false,
+          working_source: '',
+          working_updated_at: '',
+          avg_confidence: 0.97,
+          start_time: 1.0,
+          end_time: 2.0,
+        },
+        {
+          utterance_id: 'utt-2',
+          speaker_index: 0,
+          speaker_label: 'Speaker 0',
+          text: 'Second fragment.',
+          raw_text: 'Second fragment.',
+          working_text: null,
+          is_working_override: false,
+          working_source: '',
+          working_updated_at: '',
+          avg_confidence: 0.96,
+          start_time: 2.2,
+          end_time: 3.0,
+        },
+      ],
+      words: [
+        { utterance_id: 'utt-1', start_time: 1.0, end_time: 1.4 },
+        { utterance_id: 'utt-1', start_time: 1.4, end_time: 1.9 },
+        { utterance_id: 'utt-2', start_time: 2.2, end_time: 2.6 },
+      ],
+    }),
+  };
+  context.api = context.window.api;
+
+  loadScript(context, 'frontend/assets/js/screens/stage_3.js');
+  loadScript(context, 'frontend/assets/js/screens/stage_2.js');
+
+  await context.loadTranscriptResultsIntoWorkspace(['job-1']);
+  context.focusLineRow('utt-2', true);
+
+  const media = context.document.getElementById('workspaceMediaMount').children[0];
+  assert.ok(media);
+  assert.strictEqual(media.currentTime, 2.2);
+
+  await context.toggleAudioPlayback();
+  assert.strictEqual(media.paused, false);
+  assert.strictEqual(context.state.activePlayback, true);
+
+  context.changeAudioSpeed('1.5');
+  assert.strictEqual(media.playbackRate, 1.5);
+
+  context.skipAudio(-1);
+  assert.ok(Math.abs(media.currentTime - 1.2) < 0.0001);
+
+  media.currentTime = 2.3;
+  media.dispatchEvent('timeupdate');
+  assert.strictEqual(context.state.focusedLineId, 'utt-2');
+  assert.strictEqual(
+    context.document.getElementById('audioTimeLabel').innerText,
+    '00:02 / 02:27:18',
+  );
+
+  await context.toggleAudioPlayback();
+  assert.strictEqual(media.paused, true);
+}
+
+async function testMissingAudioShowsExplicitUnavailableState() {
+  const context = createContext();
+  seedStage3Elements(context);
+
+  context.window.api = {
+    getTranscriptMediaUrl: (jobId) => {
+      const url = `/api/transcripts/jobs/${jobId}/media`;
+      context.__mediaRegistry[url] = { missing: true };
+      return url;
+    },
+    getTranscriptContent: async () => ({
+      job: { job_id: 'job-1', source_filename: 'sample.mp3', duration_seconds: 8838 },
+      speakers: [],
+      participants: [],
+      utterances: [
+        {
+          utterance_id: 'utt-1',
+          speaker_index: 0,
+          speaker_label: 'Speaker 0',
+          text: 'First fragment.',
+          raw_text: 'First fragment.',
+          working_text: null,
+          is_working_override: false,
+          working_source: '',
+          working_updated_at: '',
+          avg_confidence: 0.97,
+          start_time: 1.0,
+          end_time: 2.0,
+        },
+      ],
+      words: [],
+    }),
+  };
+  context.api = context.window.api;
+
+  loadScript(context, 'frontend/assets/js/screens/stage_3.js');
+  loadScript(context, 'frontend/assets/js/screens/stage_2.js');
+
+  await context.loadTranscriptResultsIntoWorkspace(['job-1']);
+  context.focusLineRow('utt-1', true);
+
+  assert.strictEqual(
+    context.document.getElementById('audioTimeLabel').innerText,
+    'Audio no longer retained for this job',
+  );
+  assert.ok(
+    context.document.getElementById('audioPlaybackNote').innerText.includes('Audio no longer retained for this job'),
+  );
+  assert.strictEqual(context.document.getElementById('playAudioBtn').disabled, true);
+}
+
 (async () => {
   await testWorkspaceLoadPreservesOneLinePerUtteranceAndGroupsHeadersAtRender();
   await testCrossSpeakerBannerAndLockedReviewFlagsRender();
+  await testTranscriptNavigationRelabelsRender();
+  await testRealPlaybackControlsAndHighlighting();
+  await testMissingAudioShowsExplicitUnavailableState();
+  const stage3Html = fs.readFileSync(path.join(process.cwd(), 'frontend', 'screens', 'stage_3_workspace.html'), 'utf8');
+  assert.ok(stage3Html.includes('audioPlaybackNote'));
+  const stage3Js = fs.readFileSync(path.join(process.cwd(), 'frontend', 'assets', 'js', 'screens', 'stage_3.js'), 'utf8');
+  assert.ok(!stage3Js.includes('playbackLineIdx'));
+  assert.ok(!stage3Js.includes('playbackInterval'));
   console.log('stage_3 frontend contract checks passed');
 })().catch((err) => {
   console.error(err);

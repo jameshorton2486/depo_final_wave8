@@ -79,6 +79,9 @@
             if (state.workspaceSave && state.workspaceSave.timer) {
                 clearTimeout(state.workspaceSave.timer);
             }
+            if (typeof window.resetPlaybackTransport === 'function') {
+                window.resetPlaybackTransport();
+            }
             state.sessionId = null;
             state.reporterId = null;
             state.stage1 = defaultStage1State();
@@ -109,6 +112,11 @@
                 timer: null,
             };
             state.transcriptLines = [];
+            state.workspaceAudioDurations = {};
+            state.workspaceTranscriptWordsByJob = {};
+            state.playbackTransport = null;
+            state.activePlayback = false;
+            state.playbackSpeed = 1.0;
             state.exhibits = [];
             state.exhibitsMeta = {
                 jobId: null,
@@ -353,10 +361,12 @@
         }
 
         function updateStatsBar() {
-            const suggestionsCount = state.transcriptLines.filter(l => l.hasSuggestion).length;
+            const suggestionsCount = Number.isInteger(state.reviewFlagCount)
+                ? state.reviewFlagCount
+                : state.transcriptLines.filter(l => l.hasSuggestion).length;
             const flagCount = document.getElementById('flagCount');
             if (!flagCount) return;
-            flagCount.innerText = `${suggestionsCount} pending flags`;
+            flagCount.innerText = `${suggestionsCount} review flags`;
         }
 
 

@@ -332,7 +332,7 @@
                 const previousLine = idx > 0 ? state.transcriptLines[idx - 1] : null;
                 row.className = `group flex items-start gap-4 hover:bg-slate-900/20 p-1.5 rounded transition-all cursor-pointer relative ${state.focusedLineId === line.id ? 'bg-indigo-950/20 border-l-2 border-indigo-500' : ''} ${isOverride ? 'ring-1 ring-emerald-500/20' : ''} ${isPlaybackLine ? 'shadow-[0_0_0_1px_rgba(34,197,94,0.3)]' : ''}`;
                 row.id = line.id;
-                row.setAttribute('onclick', `focusLineRow('${line.id}')`);
+                row.setAttribute('onclick', `focusLineRow('${line.id}', ${!isSystemRow ? 'true' : 'false'})`);
 
                 // Index column
                 const numIndex = document.createElement('div');
@@ -507,36 +507,458 @@
         }
 
         // Focused Line Event Tracker
-        function focusLineRow(id) {
+        function _playbackState() {
+            if (!state.playbackTransport) {
+                state.playbackTransport = {
+                    element: null,
+                    activeJobId: null,
+                    mediaUrl: '',
+                    availability: 'idle',
+                    duration: 0,
+                    currentTime: 0,
+                    playbackRate: state.playbackSpeed || 1.0,
+                    pendingSeekTime: null,
+                    pendingAutoplay: false,
+                    lineIndexByJob: {},
+                    wordIndexByJob: {},
+                    utteranceLineMapByJob: {},
+                };
+            }
+            return state.playbackTransport;
+        }
+
+        function _syncFocusedLineClasses() {
+            (state.transcriptLines || []).forEach(line => {
+                if (!line || !line.id) return;
+                const row = document.getElementById(line.id);
+                if (!row || !row.classList) return;
+                const isFocused = state.focusedLineId === line.id;
+                const isPlaybackLine = !!(state.activePlayback && isFocused);
+                row.classList.toggle('bg-indigo-950/20', isFocused);
+                row.classList.toggle('border-l-2', isFocused);
+                row.classList.toggle('border-indigo-500', isFocused);
+                row.classList.toggle('shadow-[0_0_0_1px_rgba(34,197,94,0.3)]', isPlaybackLine);
+            });
+        }
+
+        function _playbackNoteElement() {
+            return document.getElementById('audioPlaybackNote');
+        }
+
+        function _setPlaybackNote(text, tone) {
+            const note = _playbackNoteElement();
+            if (!note) return;
+            note.innerText = text;
+            note.className = tone === 'error'
+                ? 'text-[10px] text-red-400 mt-2'
+                : tone === 'ready'
+                    ? 'text-[10px] text-slate-500 mt-2'
+                    : 'text-[10px] text-amber-400 mt-2';
+        }
+
+        function _renderUnavailablePlaybackState(message) {
+            const playhead = document.getElementById('playheadIndicator');
+            const label = document.getElementById('audioTimeLabel');
+            const playBtn = document.getElementById('playAudioBtn');
+            const speed = document.getElementById('audioSpeedRange');
+            const svg = document.getElementById('playIconSvg');
+            const playback = _playbackState();
+
+            state.activePlayback = false;
+            playback.availability = 'missing';
+            playback.currentTime = 0;
+            if (playhead) {
+                playhead.style.left = '0%';
+                playhead.style.opacity = '0';
+            }
+            if (label) label.innerText = message || 'Audio no longer retained for this job';
+            if (playBtn) {
+                playBtn.disabled = true;
+                playBtn.className = "bg-slate-800 text-slate-500 font-bold p-3 rounded-xl transition-all flex items-center justify-center cursor-not-allowed";
+            }
+            if (svg) {
+                svg.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`;
+            }
+            if (speed) speed.disabled = true;
+            _setPlaybackNote(message || 'Audio no longer retained for this job', 'error');
+            _syncFocusedLineClasses();
+        }
+
+        function _setPlaybackControlsEnabled(enabled) {
+            const playhead = document.getElementById('playheadIndicator');
+            const playBtn = document.getElementById('playAudioBtn');
+            const speed = document.getElementById('audioSpeedRange');
+            if (playhead) playhead.style.opacity = enabled ? '1' : '0.35';
+            if (playBtn) {
+                playBtn.disabled = !enabled;
+                if (!enabled) {
+                    playBtn.className = "bg-slate-800 text-slate-500 font-bold p-3 rounded-xl transition-all flex items-center justify-center cursor-not-allowed";
+                }
+            }
+            if (speed) speed.disabled = !enabled;
+        }
+
+        function _updatePlaybackButton() {
+            const playBtn = document.getElementById('playAudioBtn');
+            const svg = document.getElementById('playIconSvg');
+            const playback = _playbackState();
+            if (!playBtn || !svg) return;
+            if (playback.availability === 'missing') {
+                playBtn.disabled = true;
+                playBtn.className = "bg-slate-800 text-slate-500 font-bold p-3 rounded-xl transition-all flex items-center justify-center cursor-not-allowed";
+                svg.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`;
+                return;
+            }
+            playBtn.disabled = false;
+            if (state.activePlayback) {
+                playBtn.className = "bg-amber-500 hover:bg-amber-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center";
+                svg.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 9v6m4-6v6"/>`;
+            } else {
+                playBtn.className = "bg-indigo-600 hover:bg-indigo-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center";
+                svg.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`;
+            }
+        }
+
+        function _lineEntriesForJob(jobId) {
+            const playback = _playbackState();
+            if (!playback.lineIndexByJob[jobId]) {
+                playback.lineIndexByJob[jobId] = (state.transcriptLines || [])
+                    .filter(line => line && line.jobId === jobId)
+                    .map(line => ({
+                        lineId: line.id,
+                        startTime: Number(line.startTime || 0),
+                        endTime: Number(line.endTime || (line.startTime || 0)),
+                    }));
+            }
+            return playback.lineIndexByJob[jobId];
+        }
+
+        function _wordEntriesForJob(jobId) {
+            const playback = _playbackState();
+            if (!playback.wordIndexByJob[jobId]) {
+                const words = (state.workspaceTranscriptWordsByJob && state.workspaceTranscriptWordsByJob[jobId]) || [];
+                playback.wordIndexByJob[jobId] = words.map(word => ({
+                    utteranceId: word.utterance_id,
+                    startTime: Number(word.start_time || 0),
+                    endTime: Number(word.end_time || 0),
+                }));
+            }
+            return playback.wordIndexByJob[jobId];
+        }
+
+        function _utteranceLineMapForJob(jobId) {
+            const playback = _playbackState();
+            if (!playback.utteranceLineMapByJob[jobId]) {
+                const out = {};
+                (state.transcriptLines || []).forEach(line => {
+                    if (line && line.jobId === jobId) out[line.id] = line.id;
+                });
+                playback.utteranceLineMapByJob[jobId] = out;
+            }
+            return playback.utteranceLineMapByJob[jobId];
+        }
+
+        function _binarySearchTimingEntry(entries, time) {
+            let lo = 0;
+            let hi = entries.length - 1;
+            let best = -1;
+            while (lo <= hi) {
+                const mid = Math.floor((lo + hi) / 2);
+                if (entries[mid].startTime <= time) {
+                    best = mid;
+                    lo = mid + 1;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            if (best < 0) return null;
+            const tolerance = 0.2;
+            const candidate = entries[best];
+            if (time <= candidate.endTime + tolerance) return candidate;
+            if (best + 1 < entries.length) {
+                const next = entries[best + 1];
+                if (time >= next.startTime - tolerance && time <= next.endTime + tolerance) {
+                    return next;
+                }
+            }
+            return candidate;
+        }
+
+        function _lineForPlaybackTime(jobId, time) {
+            const words = _wordEntriesForJob(jobId);
+            if (words.length > 0) {
+                const word = _binarySearchTimingEntry(words, time);
+                if (word) {
+                    const lineId = _utteranceLineMapForJob(jobId)[word.utteranceId];
+                    if (lineId) {
+                        return state.transcriptLines.find(line => line && line.id === lineId) || null;
+                    }
+                }
+            }
+            const lineEntry = _binarySearchTimingEntry(_lineEntriesForJob(jobId), time);
+            if (!lineEntry) return null;
+            return state.transcriptLines.find(line => line && line.id === lineEntry.lineId) || null;
+        }
+
+        function _playbackLabel(jobId, currentTime) {
+            const duration = Number(
+                (state.workspaceAudioDurations && state.workspaceAudioDurations[jobId]) || 0
+            );
+            return `${formatPlaybackTimestamp(currentTime || 0)} / ${duration > 0 ? formatPlaybackTimestamp(duration) : '--:--'}`;
+        }
+
+        function _renderPlaybackProgress() {
+            const playback = _playbackState();
+            const playhead = document.getElementById('playheadIndicator');
+            const label = document.getElementById('audioTimeLabel');
+            if (playback.availability === 'missing') {
+                _renderUnavailablePlaybackState('Audio no longer retained for this job');
+                return;
+            }
+            if (label) {
+                label.innerText = _playbackLabel(playback.activeJobId, playback.currentTime);
+            }
+            if (playhead) {
+                const percent = playback.duration > 0
+                    ? Math.max(0, Math.min((playback.currentTime / playback.duration) * 100, 100))
+                    : 0;
+                playhead.style.left = `${percent}%`;
+                playhead.style.opacity = '1';
+            }
+        }
+
+        function _handlePlaybackTimeUpdate() {
+            const playback = _playbackState();
+            if (!playback.element || !playback.activeJobId || playback.availability !== 'ready') {
+                return;
+            }
+            playback.currentTime = Number(playback.element.currentTime || 0);
+            playback.duration = Number(playback.element.duration || playback.duration || 0);
+            _renderPlaybackProgress();
+            const line = _lineForPlaybackTime(playback.activeJobId, playback.currentTime);
+            if (line && line.id !== state.focusedLineId) {
+                focusLineRow(line.id, false, true);
+            } else {
+                _syncFocusedLineClasses();
+            }
+        }
+
+        function _ensureMediaElement() {
+            const playback = _playbackState();
+            if (playback.element) return playback.element;
+            const mount = document.getElementById('workspaceMediaMount') || document.body;
+            const el = document.createElement('audio');
+            el.id = 'workspaceAudioElement';
+            el.preload = 'metadata';
+            el.className = 'hidden';
+            el.style.display = 'none';
+            el.addEventListener('loadedmetadata', function () {
+                const active = _playbackState();
+                active.availability = 'ready';
+                active.duration = Number(el.duration || active.duration || 0);
+                if (active.pendingSeekTime != null) {
+                    el.currentTime = active.pendingSeekTime;
+                    active.currentTime = active.pendingSeekTime;
+                } else {
+                    active.currentTime = Number(el.currentTime || 0);
+                }
+                el.playbackRate = active.playbackRate || state.playbackSpeed || 1.0;
+                _setPlaybackControlsEnabled(true);
+                _setPlaybackNote('Real audio playback from retained job media.', 'ready');
+                _updatePlaybackButton();
+                _renderPlaybackProgress();
+                if (active.pendingAutoplay) {
+                    active.pendingAutoplay = false;
+                    const playAttempt = el.play();
+                    if (playAttempt && typeof playAttempt.catch === 'function') {
+                        playAttempt.catch(() => {});
+                    }
+                }
+            });
+            el.addEventListener('timeupdate', _handlePlaybackTimeUpdate);
+            el.addEventListener('play', function () {
+                state.activePlayback = true;
+                _updatePlaybackButton();
+                _syncFocusedLineClasses();
+            });
+            el.addEventListener('pause', function () {
+                state.activePlayback = false;
+                _updatePlaybackButton();
+                _syncFocusedLineClasses();
+            });
+            el.addEventListener('ratechange', function () {
+                state.playbackSpeed = Number(el.playbackRate || state.playbackSpeed || 1.0);
+                const speedLabel = document.getElementById('audioSpeedLabel');
+                if (speedLabel) speedLabel.innerText = `${state.playbackSpeed.toFixed(1)}x`;
+            });
+            el.addEventListener('ended', function () {
+                state.activePlayback = false;
+                _updatePlaybackButton();
+                _syncFocusedLineClasses();
+            });
+            el.addEventListener('error', function () {
+                const active = _playbackState();
+                active.pendingAutoplay = false;
+                active.pendingSeekTime = null;
+                active.duration = 0;
+                active.currentTime = 0;
+                _renderUnavailablePlaybackState('Audio no longer retained for this job');
+                _updatePlaybackButton();
+            });
+            mount.appendChild(el);
+            playback.element = el;
+            return el;
+        }
+
+        function _resetPlaybackIndexes() {
+            const playback = _playbackState();
+            playback.lineIndexByJob = {};
+            playback.wordIndexByJob = {};
+            playback.utteranceLineMapByJob = {};
+        }
+
+        function resetPlaybackTransport() {
+            const playback = _playbackState();
+            if (playback.element) {
+                playback.element.pause();
+                playback.element.removeAttribute('src');
+                if (typeof playback.element.load === 'function') playback.element.load();
+            }
+            state.activePlayback = false;
+            state.playbackSpeed = 1.0;
+            playback.activeJobId = null;
+            playback.mediaUrl = '';
+            playback.availability = 'idle';
+            playback.duration = 0;
+            playback.currentTime = 0;
+            playback.playbackRate = 1.0;
+            playback.pendingSeekTime = null;
+            playback.pendingAutoplay = false;
+            _resetPlaybackIndexes();
+            const label = document.getElementById('audioTimeLabel');
+            const playhead = document.getElementById('playheadIndicator');
+            const speed = document.getElementById('audioSpeedRange');
+            const speedLabel = document.getElementById('audioSpeedLabel');
+            if (label) label.innerText = '00:00 / --:--';
+            if (playhead) {
+                playhead.style.left = '0%';
+                playhead.style.opacity = '1';
+            }
+            if (speed) {
+                speed.disabled = false;
+                speed.value = '1.0';
+            }
+            if (speedLabel) speedLabel.innerText = '1.0x';
+            _setPlaybackNote('Real audio playback from retained job media.', 'ready');
+            _updatePlaybackButton();
+            _syncFocusedLineClasses();
+        }
+
+        async function _activatePlaybackJob(jobId, options) {
+            const playback = _playbackState();
+            const line = (state.transcriptLines || []).find(item => item && item.jobId === jobId);
+            if (!jobId || !line || !window.api || typeof window.api.getTranscriptMediaUrl !== 'function') {
+                _renderUnavailablePlaybackState('Audio no longer retained for this job');
+                return null;
+            }
+            const element = _ensureMediaElement();
+            const mediaUrl = window.api.getTranscriptMediaUrl(jobId);
+            playback.activeJobId = jobId;
+            playback.playbackRate = Number(state.playbackSpeed || 1.0);
+            playback.pendingSeekTime = options && options.seekTime != null ? Number(options.seekTime) : null;
+            playback.pendingAutoplay = !!(options && options.autoplay);
+            _resetPlaybackIndexes();
+
+            if (playback.mediaUrl !== mediaUrl) {
+                playback.mediaUrl = mediaUrl;
+                playback.availability = 'loading';
+                _setPlaybackControlsEnabled(false);
+                _setPlaybackNote('Loading retained audio for this transcript job…', 'loading');
+                element.src = mediaUrl;
+                if (typeof element.load === 'function') element.load();
+                return element;
+            }
+
+            playback.availability = playback.availability === 'missing' ? 'loading' : playback.availability;
+            if (playback.pendingSeekTime != null) {
+                element.currentTime = playback.pendingSeekTime;
+                playback.currentTime = playback.pendingSeekTime;
+            }
+            element.playbackRate = playback.playbackRate;
+            _renderPlaybackProgress();
+            if (playback.pendingAutoplay) {
+                const playAttempt = element.play();
+                if (playAttempt && typeof playAttempt.catch === 'function') {
+                    playAttempt.catch(() => {});
+                }
+            }
+            playback.pendingAutoplay = false;
+            return element;
+        }
+
+        async function _seekToTranscriptLine(line, autoplay) {
+            if (!line || !line.jobId) return;
+            const element = await _activatePlaybackJob(line.jobId, {
+                seekTime: Number(line.startTime || 0),
+                autoplay: !!autoplay,
+            });
+            if (!element) return;
+            if (_playbackState().availability === 'ready') {
+                element.currentTime = Number(line.startTime || 0);
+                _playbackState().currentTime = Number(line.startTime || 0);
+                _renderPlaybackProgress();
+            }
+        }
+
+        function focusLineRow(id, seekMedia, fromPlayback) {
             state.focusedLineId = id;
             const line = state.transcriptLines.find(l => l.id === id);
             if (line) {
                 document.getElementById('cursorLineTracker').innerText = `LINE ${line.index}`;
                 drawAudioWaveProgress(line.index);
                 updateRightPanelContext(line);
+                _syncFocusedLineClasses();
                 if (state.workspaceMode === 'suggestions') {
                     triggerSuggestionBox(id);
+                }
+                if (seekMedia && !fromPlayback && line.jobId) {
+                    _seekToTranscriptLine(line, false);
                 }
             }
         }
 
-        function drawAudioWaveProgress(index) {
-            const playhead = document.getElementById('playheadIndicator');
-            const playableLines = (state.transcriptLines || []).filter(line => line && line.jobId);
-            const focused = state.transcriptLines.find(l => l && l.index === index);
-            const playableIndex = Math.max(
-                0,
-                playableLines.findIndex(line => focused && line.id === focused.id)
-            );
-            const percent = playableLines.length > 0
-                ? Math.min(((playableIndex + 1) / playableLines.length) * 100, 100)
-                : 0;
-            playhead.style.left = `${percent}%`;
+        function formatPlaybackTimestamp(seconds) {
+            const total = Math.max(0, Math.round(Number(seconds) || 0));
+            const hours = Math.floor(total / 3600);
+            const minutes = Math.floor((total % 3600) / 60);
+            const secs = total % 60;
+            if (hours > 0) {
+                return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            }
+            return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
 
-            const totalDuration = playableLines
-                .slice(0, playableIndex + 1)
-                .reduce((acc, c) => acc + (c.duration || 0), 0);
-            document.getElementById('audioTimeLabel').innerText = `00:${totalDuration.toFixed(0).padStart(2, '0')}.2 / 02:45.0`;
+        function drawAudioWaveProgress(index) {
+            const focused = state.transcriptLines.find(l => l && l.index === index);
+            const playback = _playbackState();
+            if (playback.activeJobId && playback.availability === 'ready') {
+                _renderPlaybackProgress();
+                return;
+            }
+            if (playback.availability === 'missing') {
+                _renderUnavailablePlaybackState('Audio no longer retained for this job');
+                return;
+            }
+            const label = document.getElementById('audioTimeLabel');
+            const playhead = document.getElementById('playheadIndicator');
+            const focusedJobId = focused && focused.jobId ? focused.jobId : null;
+            if (label) {
+                label.innerText = _playbackLabel(focusedJobId, 0);
+            }
+            if (playhead) {
+                playhead.style.left = '0%';
+                playhead.style.opacity = focusedJobId ? '1' : '0.35';
+            }
         }
 
         function updateRightPanelContext(line) {
@@ -567,7 +989,7 @@
                 document.getElementById('modeBtnEdit').className = "px-3 py-1.5 text-xs font-medium rounded-lg transition-all border border-slate-700 bg-slate-800 text-white shadow-sm";
                 bannerText.innerText = "Free Edit Mode: Click any line and type to edit text directly. Left rail tags are preserved automatically.";
                 document.getElementById('toolSectionAudio').classList.remove('hidden');
-                document.getElementById('rightPanelTitle').innerText = "Audio & Context Wave";
+                document.getElementById('rightPanelTitle').innerText = "Transcript Navigation Preview";
             } else if (mode === 'suggestions') {
                 document.getElementById('modeBtnSuggestions').className = "px-3 py-1.5 text-xs font-medium rounded-lg transition-all border border-slate-700 bg-slate-800 text-white shadow-sm";
                 bannerText.innerText = "Suggestion Sweep Mode: Interactive list of low confidence alignments. Review and remember spelling lists.";
@@ -576,9 +998,9 @@
                 triggerSuggestionBox(state.focusedLineId);
             } else if (mode === 'audio') {
                 document.getElementById('modeBtnAudio').className = "px-3 py-1.5 text-xs font-medium rounded-lg transition-all border border-slate-700 bg-slate-800 text-white shadow-sm";
-                bannerText.innerText = "Audio Sync Review Mode: Words illuminate synchronously with waveform timeline loops.";
+                bannerText.innerText = "Transcript Navigation Preview: click a line to seek retained media and follow playback in real time.";
                 document.getElementById('toolSectionAudio').classList.remove('hidden');
-                document.getElementById('rightPanelTitle').innerText = "Acoustic Playback Engine";
+                document.getElementById('rightPanelTitle').innerText = "Transcript Navigation Preview";
             } else if (mode === 'formatting') {
                 document.getElementById('modeBtnFormatting').className = "px-3 py-1.5 text-xs font-medium rounded-lg transition-all border border-slate-700 bg-slate-800 text-white shadow-sm";
                 bannerText.innerText = "UFM Layout Mode: Recalculate strict margins, margins indicators, page counts and format types (Q & A parameters).";
@@ -734,56 +1156,62 @@
         }
 
         // Global playback sync controls
-        function toggleAudioPlayback() {
-            state.activePlayback = !state.activePlayback;
-            const playBtn = document.getElementById('playAudioBtn');
-            const svg = document.getElementById('playIconSvg');
-            const playableLines = (state.transcriptLines || []).filter(line => line && line.jobId);
-
-            if (state.activePlayback) {
-                if (playableLines.length === 0) {
-                    state.activePlayback = false;
-                    showToast("No timestamped transcript lines available for playback review.", "amber");
-                    return;
-                }
-                svg.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 9v6m4-6v6"/>`;
-                playBtn.className = "bg-amber-500 hover:bg-amber-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center";
-                showToast("Audio review playback active. Timing is estimated from transcript timestamps.", "indigo");
-
-                state.playbackInterval = setInterval(() => {
-                    state.playbackLineIdx++;
-                    if (state.playbackLineIdx >= playableLines.length) {
-                        state.playbackLineIdx = 0;
-                    }
-                    focusLineRow(playableLines[state.playbackLineIdx].id);
-                }, 1000 / state.playbackSpeed);
-            } else {
-                svg.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`;
-                playBtn.className = "bg-indigo-600 hover:bg-indigo-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center";
-                clearInterval(state.playbackInterval);
+        async function toggleAudioPlayback() {
+            const playback = _playbackState();
+            const currentLine = state.transcriptLines.find(line => line && line.id === state.focusedLineId && line.jobId)
+                || (state.transcriptLines || []).find(line => line && line.jobId)
+                || null;
+            if (!currentLine) {
+                showToast("No timestamped transcript lines available for playback review.", "amber");
+                return;
             }
+            if (playback.availability === 'missing' && playback.activeJobId === currentLine.jobId) {
+                _renderUnavailablePlaybackState('Audio no longer retained for this job');
+                return;
+            }
+            const shouldStart = !state.activePlayback;
+            const element = await _activatePlaybackJob(currentLine.jobId, {
+                seekTime: playback.activeJobId === currentLine.jobId ? playback.currentTime : Number(currentLine.startTime || 0),
+                autoplay: shouldStart,
+            });
+            if (!element || _playbackState().availability === 'missing') {
+                return;
+            }
+            if (!shouldStart) {
+                element.pause();
+            } else if (_playbackState().availability === 'ready' && !state.activePlayback) {
+                const playAttempt = element.play();
+                if (playAttempt && typeof playAttempt.catch === 'function') {
+                    playAttempt.catch(() => {});
+                }
+            }
+            _updatePlaybackButton();
         }
 
         function changeAudioSpeed(val) {
             state.playbackSpeed = parseFloat(val);
             document.getElementById('audioSpeedLabel').innerText = `${state.playbackSpeed.toFixed(1)}x`;
-            if (state.activePlayback) {
-                const playableLines = (state.transcriptLines || []).filter(line => line && line.jobId);
-                clearInterval(state.playbackInterval);
-                state.playbackInterval = setInterval(() => {
-                    state.playbackLineIdx++;
-                    if (state.playbackLineIdx >= playableLines.length) state.playbackLineIdx = 0;
-                    focusLineRow(playableLines[state.playbackLineIdx].id);
-                }, 1000 / state.playbackSpeed);
-            }
+            const playback = _playbackState();
+            playback.playbackRate = state.playbackSpeed;
+            if (playback.element) playback.element.playbackRate = state.playbackSpeed;
         }
 
         function skipAudio(val) {
-            const playableLines = (state.transcriptLines || []).filter(line => line && line.jobId);
-            if (playableLines.length === 0) return;
-            const change = val > 0 ? 1 : -1;
-            state.playbackLineIdx = Math.max(0, Math.min(state.playbackLineIdx + change, playableLines.length - 1));
-            focusLineRow(playableLines[state.playbackLineIdx].id);
+            const playback = _playbackState();
+            if (!playback.element || playback.availability === 'missing') {
+                if (playback.availability === 'missing') {
+                    _renderUnavailablePlaybackState('Audio no longer retained for this job');
+                }
+                return;
+            }
+            const duration = Number(playback.element.duration || playback.duration || 0);
+            const nextTime = Math.max(
+                0,
+                Math.min(Number(playback.element.currentTime || 0) + Number(val || 0), duration || Number.MAX_SAFE_INTEGER)
+            );
+            playback.element.currentTime = nextTime;
+            playback.currentTime = nextTime;
+            _handlePlaybackTimeUpdate();
         }
 
         function _speakerMapState() {
@@ -1387,6 +1815,7 @@ window.removeFillerWordsGlobal = removeFillerWordsGlobal;
 window.toggleAudioPlayback = toggleAudioPlayback;
 window.changeAudioSpeed = changeAudioSpeed;
 window.skipAudio = skipAudio;
+window.resetPlaybackTransport = resetPlaybackTransport;
 window.renderCorrectionMemory = renderCorrectionMemory;
 window.renderWorkspaceSaveStatus = renderWorkspaceSaveStatus;
 window.copyTranscriptToClipboard = copyTranscriptToClipboard;

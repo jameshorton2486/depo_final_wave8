@@ -18,6 +18,7 @@ build simple -- no external queue/worker infrastructure.
 
 from __future__ import annotations
 
+import mimetypes
 import re
 from pathlib import Path
 
@@ -26,11 +27,14 @@ from fastapi import (
     BackgroundTasks,
     File,
     Form,
+    Header,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -100,6 +104,60 @@ def _audio_dir() -> Path:
     path = settings.data_root / "audio"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _media_content_type(path: Path) -> str:
+    guessed, _ = mimetypes.guess_type(str(path))
+    return guessed or "application/octet-stream"
+
+
+def _iter_file_range(path: Path, start: int, end: int, chunk_size: int = 64 * 1024):
+    with path.open("rb") as handle:
+        handle.seek(start)
+        remaining = end - start + 1
+        while remaining > 0:
+            chunk = handle.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
+
+
+def _resolve_media_range(range_header: str | None, file_size: int) -> tuple[int, int, bool]:
+    if not range_header:
+        return 0, max(0, file_size - 1), False
+    match = re.match(r"^bytes=(\d*)-(\d*)$", range_header.strip())
+    if not match:
+        raise HTTPException(
+            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            detail="Invalid Range header.",
+        )
+    start_raw, end_raw = match.groups()
+    if start_raw == "" and end_raw == "":
+        raise HTTPException(
+            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            detail="Invalid Range header.",
+        )
+    if start_raw == "":
+        length = int(end_raw)
+        if length <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+                detail="Invalid Range header.",
+            )
+        start = max(0, file_size - length)
+        end = max(0, file_size - 1)
+        return start, end, True
+
+    start = int(start_raw)
+    end = int(end_raw) if end_raw else max(0, file_size - 1)
+    if start >= file_size or start < 0 or end < start:
+        raise HTTPException(
+            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            detail="Requested range not satisfiable.",
+        )
+    end = min(end, max(0, file_size - 1))
+    return start, end, True
 
 
 def _assert_raw_integrity_or_409(job_row: dict) -> None:
@@ -361,6 +419,54 @@ def get_job_content(job_id: str) -> TranscriptContent:
         words=[TranscriptWord(**w) for w in trepo.get_words(job_id)],
         participants=[TranscriptParticipant(**p) for p in trepo.get_participants(job_id)],
         exhibits=[TranscriptExhibit(**e) for e in trepo.list_exhibits(job_id)],
+    )
+
+
+@router.get("/jobs/{job_id}/media")
+def stream_job_media(
+    job_id: str,
+    request: Request,
+    range_header: str | None = Header(default=None, alias="Range"),
+):
+    row = trepo.get_job(job_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+    audio_path_value = row.get("audio_path")
+    media_path = Path(audio_path_value) if audio_path_value else None
+    if media_path is None or not media_path.exists() or not media_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audio no longer retained for this job",
+        )
+
+    file_size = media_path.stat().st_size
+    try:
+        start, end, partial = _resolve_media_range(range_header, file_size)
+    except HTTPException as exc:
+        exc.headers = {"Content-Range": f"bytes */{file_size}"}
+        raise exc
+
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(end - start + 1),
+    }
+    if partial:
+        headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+    if request.method == "HEAD":
+        return StreamingResponse(
+            iter(()),
+            status_code=status.HTTP_206_PARTIAL_CONTENT if partial else status.HTTP_200_OK,
+            media_type=_media_content_type(media_path),
+            headers=headers,
+        )
+    return StreamingResponse(
+        _iter_file_range(media_path, start, end),
+        status_code=status.HTTP_206_PARTIAL_CONTENT if partial else status.HTTP_200_OK,
+        media_type=_media_content_type(media_path),
+        headers=headers,
     )
 
 

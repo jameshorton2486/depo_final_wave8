@@ -123,7 +123,7 @@
                             ✨ Suggestion Sweep
                         </button>
                         <button onclick="setWorkspaceMode('audio')" id="modeBtnAudio" class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all border border-transparent text-slate-400 hover:text-slate-200">
-                            🎧 Audio Sync Review
+                            🎧 Transcript Navigation
                         </button>
                         <button onclick="setWorkspaceMode('formatting')" id="modeBtnFormatting" class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all border border-transparent text-slate-400 hover:text-slate-200 font-mono">
                             ¶ UFM Layout
@@ -199,7 +199,7 @@
 
                     <!-- Top Section: Mode Context Banner -->
                     <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-                        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400" id="rightPanelTitle">Audio & Context Wave</span>
+                        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400" id="rightPanelTitle">Transcript Navigation Preview</span>
                         <button
                             onclick="var p = document.getElementById('stage3RightPanel'); p.classList.toggle('stage3-right-collapsed');"
                             class="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-all text-xs font-mono select-none"
@@ -212,7 +212,7 @@
 
                         <!-- TOOL COMPONENT: Waveform Playback Controls (Audio sync) -->
                         <div id="toolSectionAudio" class="space-y-4">
-                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Synchronized Playhead</span>
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Playback Position</span>
                             <div class="bg-slate-950 rounded-xl p-3.5 border border-slate-805">
 
                                 <!-- Waveform Visualization -->
@@ -245,7 +245,7 @@
                                 </div>
 
                                 <div class="flex items-center justify-between">
-                                    <span id="audioTimeLabel" class="text-xs font-mono text-slate-400">00:04.2 / 02:45.0</span>
+                                    <span id="audioTimeLabel" class="text-xs font-mono text-slate-400">00:00 / --:--</span>
                                     <span id="confidenceScoreLabel" class="text-[10px] font-semibold font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">97% Conf</span>
                                 </div>
 
@@ -268,8 +268,9 @@
                                         <input type="range" id="audioSpeedRange" min="0.5" max="2.0" step="0.1" value="1.0" oninput="changeAudioSpeed(this.value)" class="flex-1 accent-indigo-500 h-1 bg-slate-900 rounded-lg appearance-none cursor-pointer">
                                         <span id="audioSpeedLabel" class="text-xs font-mono text-indigo-400">1.0x</span>
                                     </div>
-                                    <p class="text-[10px] text-slate-500 mt-2">Playback review uses transcript timestamps for guided seeking. It is advisory, not frame-perfect media sync.</p>
+                                    <p id="audioPlaybackNote" class="text-[10px] text-slate-500 mt-2">Real audio playback from retained job media. If the file is unavailable, Stage 3 will say so explicitly.</p>
                                 </div>
+                                <div id="workspaceMediaMount" class="hidden"></div>
                             </div>
                         </div>
 

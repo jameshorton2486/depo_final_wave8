@@ -363,6 +363,12 @@ function pollTranscriptJob(jobId, onUpdate) {
 async function loadTranscriptResultsIntoWorkspace(jobIds) {
     const lines = [];
     let runningIndex = 0;
+    let expectedUtteranceCount = 0;
+    if (typeof window.resetPlaybackTransport === 'function') {
+        window.resetPlaybackTransport();
+    }
+    state.workspaceAudioDurations = {};
+    state.workspaceTranscriptWordsByJob = {};
 
     for (let j = 0; j < jobIds.length; j++) {
         let content;
@@ -372,6 +378,8 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
             console.error("Could not load transcript content for", jobIds[j], err);
             continue;
         }
+        state.workspaceAudioDurations[content.job.job_id] = content.job.duration_seconds || 0;
+        state.workspaceTranscriptWordsByJob[content.job.job_id] = content.words || [];
 
         const speakerNames = {};
         (content.speakers || []).forEach(s => {
@@ -414,6 +422,7 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
         }
 
         (content.utterances || []).forEach(utt => {
+            expectedUtteranceCount++;
             lines.push({
                 id: utt.utterance_id,
                 index: ++runningIndex,
@@ -434,7 +443,18 @@ async function loadTranscriptResultsIntoWorkspace(jobIds) {
                 hasSuggestion: false,
                 duration: Math.max(0, (utt.end_time || 0) - (utt.start_time || 0)),
                 startTime: utt.start_time,
+                endTime: utt.end_time,
+                mediaDurationSeconds: content.job.duration_seconds || 0,
             });
+        });
+    }
+
+    const renderedUtteranceLines = lines.filter(line => line && line.jobId).length;
+    if (renderedUtteranceLines !== expectedUtteranceCount) {
+        console.error('[DEPO-PRO] Workspace load invariant failed', {
+            expectedUtteranceCount: expectedUtteranceCount,
+            renderedUtteranceLines: renderedUtteranceLines,
+            jobIds: jobIds,
         });
     }
 
