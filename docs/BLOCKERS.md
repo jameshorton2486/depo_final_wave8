@@ -10,13 +10,25 @@ This file is the active policy-decision and blocker register. Resolved blockers
 remain below for historical decision context, but they are not active
 implementation blockers unless explicitly reopened.
 
-## Active Policy Questions
+## Active Follow-On Work
+
+- **Retire `payload.locked_informational`** — remove the redundant
+  `locked_informational` boolean and make `status == "informational"` the sole
+  authority for locked audit metadata in the cross-speaker review flow.
+- **Branch hygiene cleanup pass** — archive/delete stale local and remote
+  branches identified by the full branch audit, in a separate cleanup-only pass
+  with no code changes mixed in.
+- **Inline video review in Stage 3** — add browser-native `.mp4` / `.mov`
+  review in Stage 3 using the same transcript-driven seek/highlight authority
+  model established by Audio Part B.
+
+## Active Policy Question
 
 - **Q20-6** — confirm whether the current Stage 5/packaging required-field set
   is the final James-approved legal set or whether it should be broadened.
 
-_Updated 2026-05-22. **All five blockers are now RESOLVED.** BLOCKER-3
-has a data-capture follow-on noted below._
+_Updated 2026-05-27. The transcript/audio stabilization workstream is shipped on
+`main`; the active list above tracks the remaining follow-on items._
 
 ---
 
