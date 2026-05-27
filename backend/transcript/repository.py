@@ -131,6 +131,16 @@ def get_job(job_id: str) -> Optional[dict]:
     return _job_row_to_dict(row) if row else None
 
 
+def find_jobs_by_audio_path(audio_path: str) -> list[dict]:
+    """Return every job whose persisted audio_path exactly matches `audio_path`."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT {', '.join(_JOB_COLUMNS)} FROM transcript_jobs WHERE audio_path = ?",
+            (audio_path,),
+        ).fetchall()
+    return [_job_row_to_dict(r) for r in rows]
+
+
 def list_jobs(case_id: Optional[str] = None, limit: int = 100) -> list[dict]:
     """List jobs newest-first, optionally filtered to one case."""
     with get_connection() as conn:

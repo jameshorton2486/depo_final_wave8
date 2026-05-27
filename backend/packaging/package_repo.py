@@ -182,6 +182,17 @@ def list_packages(job_id: str) -> list[dict]:
     return [_row_to_summary(r) for r in rows]
 
 
+def has_certified_package(job_id: str) -> bool:
+    """True when immutable certified package lineage exists for `job_id`."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM transcript_packages "
+            "WHERE job_id = ? AND package_state = 'CERTIFIED' LIMIT 1",
+            (job_id,),
+        ).fetchone()
+    return row is not None
+
+
 def update_package_state(
     package_id: str,
     new_state: str,

@@ -5,7 +5,9 @@ from pathlib import Path
 
 from loguru import logger
 
+from backend.packaging import package_repo
 from backend.config import settings
+from backend.transcript import repository as trepo
 
 
 def _age_days(now_ts: float, modified_ts: float) -> float:
@@ -14,6 +16,46 @@ def _age_days(now_ts: float, modified_ts: float) -> float:
 
 def _size_mb(size_bytes: int) -> float:
     return size_bytes / (1024 * 1024)
+
+
+def _resolve_job_for_audio_path(audio_path: Path) -> tuple[dict | None, str | None]:
+    try:
+        jobs = trepo.find_jobs_by_audio_path(str(audio_path))
+    except Exception as exc:  # noqa: BLE001
+        return None, f"Audio retention lookup failed for {audio_path.name}: {exc}"
+
+    if not jobs:
+        return None, (
+            f"Audio retention lookup failed for {audio_path.name}: no transcript job "
+            "owns this audio_path; preserving file."
+        )
+    if len(jobs) > 1:
+        return None, (
+            f"Audio retention lookup failed for {audio_path.name}: multiple transcript "
+            "jobs share this audio_path; preserving file."
+        )
+    return jobs[0], None
+
+
+def _has_certified_lineage(audio_path: Path) -> tuple[bool | None, str | None]:
+    job, error = _resolve_job_for_audio_path(audio_path)
+    if error:
+        return None, error
+
+    job_id = (job or {}).get("job_id") or ""
+    if not job_id:
+        return None, (
+            f"Audio retention lookup failed for {audio_path.name}: owning transcript job "
+            "has no job_id; preserving file."
+        )
+
+    try:
+        return package_repo.has_certified_package(job_id), None
+    except Exception as exc:  # noqa: BLE001
+        return None, (
+            f"Audio retention certification lookup failed for {audio_path.name} "
+            f"(job {job_id}): {exc}"
+        )
 
 
 def prune_audio(
@@ -33,6 +75,8 @@ def prune_audio(
         "scanned": 0,
         "eligible": 0,
         "deleted": 0,
+        "preserved_certified": 0,
+        "preserved_unresolved": 0,
         "reclaimed_mb": 0.0,
         "errors": [],
     }
@@ -65,9 +109,24 @@ def prune_audio(
             if stat.st_mtime > cutoff_ts:
                 continue
 
-            summary["eligible"] += 1
             age_days = _age_days(now_ts, stat.st_mtime)
             size_mb = _size_mb(stat.st_size)
+            certified_lineage, lineage_error = _has_certified_lineage(path)
+
+            if lineage_error:
+                summary["preserved_unresolved"] += 1
+                summary["errors"].append(lineage_error)
+                logger.warning(lineage_error)
+                continue
+
+            if certified_lineage:
+                summary["preserved_certified"] += 1
+                logger.info(
+                    f"preserved certified audio {path.name} ({age_days:.1f} days, {size_mb:.2f} MB)"
+                )
+                continue
+
+            summary["eligible"] += 1
 
             if dry_run:
                 logger.info(
