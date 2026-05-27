@@ -84,11 +84,11 @@ def normalize(raw_response: dict) -> NormalizedTranscript:
     if not raw_utterances:
         raw_utterances = _group_words_by_speaker(flat_words)
 
-    # Group consecutive same-speaker utterances into one paragraph per
-    # speaker turn. Deepgram splits utterances on short pauses, so a
-    # single turn often arrives as several fragments; merging them
-    # reconstructs the natural paragraph the Deepgram Playground shows.
-    raw_utterances = _merge_consecutive_speaker_utterances(raw_utterances)
+    # Deepgram utterances are persisted one-to-one as canonical utterances.
+    # No same-speaker merging occurs at ingest: the canonical/raw layer must
+    # faithfully mirror the provider response. Speaker-run grouping for the
+    # Playground-style display is a render-layer concern (Stage 3), not a
+    # transcript transformation.
 
     transcript = NormalizedTranscript()
     word_index = 0
@@ -175,60 +175,6 @@ def normalize(raw_response: dict) -> NormalizedTranscript:
         u["text"] for u in transcript.utterances
     )
     return transcript
-
-
-def _merge_consecutive_speaker_utterances(raw_utterances: list[dict]) -> list[dict]:
-    """Merge consecutive utterances spoken by the same speaker into one turn.
-
-    Deepgram's batch response splits utterances at short pauses, so a
-    single uninterrupted speaker turn frequently arrives as several short
-    utterances. Left as-is, the Workspace renders each fragment on its
-    own line -- a deposition address read aloud as "12135 / Stoney Glen /
-    San Antonio, Texas / 78247" becomes four separate lines.
-
-    This pass walks the utterance list and concatenates any run of
-    consecutive utterances that share a speaker index into a single
-    paragraph, exactly the way the Deepgram Playground groups them. Word
-    objects keep their own fine-grained timing; only the utterance
-    grouping changes. The verbatim Deepgram JSON (asr_response.json)
-    is untouched and remains the ground-truth raw artifact.
-    """
-    if not raw_utterances:
-        return []
-
-    merged: list[dict] = []
-    for utt in raw_utterances:
-        speaker = _safe_int(utt.get("speaker"))
-        words = list(utt.get("words") or [])
-        text = (utt.get("transcript") or "").strip()
-
-        prev_speaker = _safe_int(merged[-1].get("speaker")) if merged else None
-        # Merge only when this utterance carries a real speaker index that
-        # matches the previous turn. If `speaker` is None (a response with
-        # no diarization data), each utterance stays its own block --
-        # otherwise None == None would collapse the entire transcript into
-        # a single paragraph.
-        if merged and speaker is not None and prev_speaker == speaker:
-            # Same speaker as the previous turn -- extend it.
-            prev = merged[-1]
-            prev["words"].extend(words)
-            prev_text = (prev.get("transcript") or "").strip()
-            if text:
-                prev["transcript"] = (prev_text + " " + text).strip()
-            if utt.get("end") is not None:
-                prev["end"] = utt.get("end")
-        else:
-            merged.append(
-                {
-                    "speaker": speaker,
-                    "start": utt.get("start"),
-                    "end": utt.get("end"),
-                    "transcript": text,
-                    "words": words,
-                }
-            )
-    return merged
-
 
 def _group_words_by_speaker(flat_words: list[dict]) -> list[dict]:
     """Fallback grouping when the response has no `utterances` array.
