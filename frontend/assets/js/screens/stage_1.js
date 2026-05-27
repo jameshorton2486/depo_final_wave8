@@ -25,38 +25,97 @@
             ufmRequestingParty: 'Requesting Firm / Party',
         };
 
+        // Update the dynamic label/styling on the Stage 1 Save Intake buttons.
+        // Both placements (primary in the validation panel, secondary in the
+        // footer beside Proceed) reflect persistence state: indigo primary
+        // CTA when the case is unsaved, slate secondary when already saved.
+        function renderSaveIntakeButtons() {
+            const saved = !!state.caseId;
+            const label = saved ? 'Save Changes' : 'Save Intake';
+
+            const primaryBtn = document.getElementById('saveIntakePrimaryBtn');
+            const primaryLabel = document.getElementById('saveIntakePrimaryBtnLabel');
+            if (primaryBtn && primaryLabel) {
+                primaryLabel.innerText = label;
+                if (saved) {
+                    primaryBtn.className = 'w-full mb-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-400 text-indigo-300 hover:text-white text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5';
+                } else {
+                    primaryBtn.className = 'w-full mb-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-1.5';
+                }
+            }
+
+            const secondaryLabel = document.getElementById('saveIntakeSecondaryBtnLabel');
+            if (secondaryLabel) {
+                secondaryLabel.innerText = label;
+            }
+        }
+
+        // Three-state banner reflecting persistence status:
+        //   State A — no caseId: NEW CASE · Unsaved (amber)
+        //   State B — saved + clean: ✓ SAVED · {cause} (emerald)
+        //   State C — saved + dirty: ● UNSAVED CHANGES · {cause} (amber, inline Save Intake)
         function renderCaseContextBanner() {
             const banner = document.getElementById('caseContextBanner');
             if (!banner) return;
             const title = document.getElementById('caseContextBannerTitle');
+            const titleText = document.getElementById('caseContextBannerTitleText');
+            const dot = document.getElementById('caseContextBannerDot');
             const subtitle = document.getElementById('caseContextBannerSubtitle');
-            const btn = document.getElementById('caseContextBannerNewBtn');
-            if (!title || !subtitle || !btn) return;
+            const newBtn = document.getElementById('caseContextBannerNewBtn');
+            const saveBtn = document.getElementById('caseContextBannerSaveBtn');
+            if (!title || !titleText || !dot || !subtitle || !newBtn || !saveBtn) return;
 
-            if (state.caseId) {
-                const cause = (state.caseInfo.cause || '').trim() || '(unnamed case)';
-                const raw = state.caseInfo.updatedAt || '';
-                let stamp = 'last saved unknown';
-                if (raw) {
-                    const d = new Date(raw);
-                    if (!isNaN(d.getTime())) {
-                        stamp = `last saved ${d.toISOString()}`;
-                    }
-                }
-                title.innerText = 'EDITING EXISTING CASE';
-                title.className = 'text-[10px] font-bold uppercase tracking-widest text-indigo-400';
-                subtitle.innerText = `${cause} · ${stamp}`;
-                banner.classList.remove('border-l-emerald-500');
-                banner.classList.add('border-l-indigo-500');
-                btn.classList.remove('hidden');
-            } else {
-                title.innerText = 'NEW CASE';
-                title.className = 'text-[10px] font-bold uppercase tracking-widest text-emerald-400';
-                subtitle.innerText = 'Fill in the fields below and click Save to create a case.';
-                banner.classList.remove('border-l-indigo-500');
-                banner.classList.add('border-l-emerald-500');
-                btn.classList.add('hidden');
+            const accentClasses = ['border-l-amber-500', 'border-l-emerald-500', 'border-l-indigo-500'];
+            accentClasses.forEach(c => banner.classList.remove(c));
+
+            if (!state.caseId) {
+                // State A — Unsaved new case.
+                titleText.innerText = 'NEW CASE · Unsaved';
+                title.className = 'text-[10px] font-bold uppercase tracking-widest text-amber-400 flex items-center gap-1.5';
+                dot.className = 'inline-block w-1.5 h-1.5 rounded-full bg-amber-400';
+                subtitle.innerText = 'Fill in the fields below and click Save Intake to create the case.';
+                banner.classList.add('border-l-amber-500');
+                newBtn.classList.add('hidden');
+                saveBtn.classList.add('hidden');
+                return;
             }
+
+            const label = (state.caseInfo.cause || '').trim()
+                || (state.caseInfo.caption || '').trim()
+                || '(unnamed case)';
+            const stamp = formatLocalTimestamp(state.caseInfo.updatedAt);
+            const dirty = !!state.caseInfo.dirtySinceSave;
+
+            if (dirty) {
+                // State C — Saved with unsaved local edits.
+                titleText.innerText = `UNSAVED CHANGES · ${label}`;
+                title.className = 'text-[10px] font-bold uppercase tracking-widest text-amber-400 flex items-center gap-1.5';
+                dot.className = 'inline-block w-1.5 h-1.5 rounded-full bg-amber-400';
+                subtitle.innerText = `Edits made since last save: ${stamp}`;
+                banner.classList.add('border-l-amber-500');
+                saveBtn.classList.remove('hidden');
+            } else {
+                // State B — Saved and clean.
+                titleText.innerText = `SAVED · ${label}`;
+                title.className = 'text-[10px] font-bold uppercase tracking-widest text-emerald-400 flex items-center gap-1.5';
+                dot.className = 'inline-block w-1.5 h-1.5 rounded-full bg-emerald-400';
+                subtitle.innerText = `Last saved: ${stamp}`;
+                banner.classList.add('border-l-emerald-500');
+                saveBtn.classList.add('hidden');
+            }
+            newBtn.classList.remove('hidden');
+        }
+
+        function formatLocalTimestamp(raw) {
+            if (!raw) return 'unknown';
+            const d = new Date(raw);
+            if (isNaN(d.getTime())) return 'unknown';
+            // toLocaleString defaults give "5/27/2026, 3:42:00 PM" in en-US;
+            // strip the seconds component to match the prompt's format.
+            return d.toLocaleString(undefined, {
+                year: 'numeric', month: 'numeric', day: 'numeric',
+                hour: 'numeric', minute: '2-digit',
+            });
         }
 
         function normalizeStage1KeytermSource(source) {
@@ -259,8 +318,18 @@
             const fieldId = inputEl.id;
 
             const stateField = UFM_ID_TO_CASEINFO[fieldId];
+            let dirtyFlipped = false;
             if (stateField) {
-                state.caseInfo[stateField] = val;
+                // Mark the workspace dirty only on a real value change so
+                // programmatic re-renders (hydrate after case load / new
+                // case) do not flip the banner into UNSAVED CHANGES.
+                if (state.caseInfo[stateField] !== val) {
+                    state.caseInfo[stateField] = val;
+                    if (!state.caseInfo.dirtySinceSave) {
+                        state.caseInfo.dirtySinceSave = true;
+                        dirtyFlipped = true;
+                    }
+                }
             }
 
             // Editing a confirmed field clears its confirmation. The check
@@ -288,6 +357,9 @@
             }
 
             checkSchemaValidationStatus();
+            if (dirtyFlipped) {
+                renderCaseContextBanner();
+            }
         }
 
         function confirmUFMField(fieldId) {
@@ -380,7 +452,6 @@
             }
             setRawIntakeNotesState(rawNotes);
 
-            showToast("Parsing pasted notes...", "cyan");
             addProvenanceRecord("Text Parser", "Parsing pasted intake notes.", "user");
 
             let payload;
@@ -421,14 +492,21 @@
             await persistStage1ArtifactsIfBound('text-parser');
 
             const keyterms = payload.keyterms || [];
-            if (populated === 0 && keyterms.length === 0) {
+            // Exactly one toast per parse. The parser either matched
+            // labelled lines or it didn't — there is no "partial" case.
+            // On the no-labels branch we use indigo (informational) rather
+            // than amber/red: the operator did nothing wrong, the format
+            // simply wasn't one the parser handles.
+            if (populated === 0) {
                 showToast(
-                    "No fields recognized. Use labels like 'Cause No:', 'Deponent:', 'Court Reporter:'.",
-                    "amber"
+                    "No labeled fields detected. The notes were preserved but not parsed. "
+                    + "Use labels like 'Cause No:' or 'Deponent:' to populate intake fields.",
+                    "indigo"
                 );
             } else {
+                const plural = populated === 1 ? '' : 's';
                 showToast(
-                    `Extracted ${populated} field(s) and ${keyterms.length} keyterm(s) from pasted notes.`,
+                    `${populated} structured intake field${plural} populated.`,
                     "emerald"
                 );
             }
@@ -437,9 +515,6 @@
                 `Extracted ${populated} fields + ${keyterms.length} keyterms from pasted notes.`,
                 "ai"
             );
-
-            const warnings = (payload.metadata && payload.metadata.warnings) || [];
-            warnings.forEach(w => showToast(w, "amber"));
         }
 
         // Real Notice of Deposition PDF parser — calls backend POST /api/nod/parse
@@ -692,17 +767,62 @@
             const pre = document.getElementById('ufmPreviewContent');
             const stamp = document.getElementById('ufmPreviewComputedAt');
             const modal = document.getElementById('ufmPreviewModal');
-            if (!pre || !modal) return;
+            const unsavedMsg = document.getElementById('ufmPreviewUnsavedMessage');
+            const copyBtn = document.getElementById('ufmPreviewCopyBtn');
+            if (!pre || !modal || !unsavedMsg) return;
 
-            if (!state.caseId || !window.api) {
-                showToast && showToast("Save the case before viewing the UFM payload.", "amber");
+            if (!state.caseId) {
+                // Unsaved branch — show the inline Save Now message instead
+                // of toasting and bailing. No GET request issued.
+                pre.classList.add('hidden');
+                unsavedMsg.classList.remove('hidden');
+                if (copyBtn) copyBtn.classList.add('hidden');
+                if (stamp) stamp.textContent = '';
+                modal.classList.remove('hidden');
                 return;
             }
+            // Saved branch — fetch and render the derived preview.
+            unsavedMsg.classList.add('hidden');
+            pre.classList.remove('hidden');
+            if (copyBtn) copyBtn.classList.remove('hidden');
+            if (!window.api) return;
             try {
                 const body = await window.api.getUfmPreview(state.caseId);
                 if (stamp) stamp.textContent = `computed_at: ${body.computed_at || ''}`;
                 pre.textContent = JSON.stringify(body, null, 2);
                 modal.classList.remove('hidden');
+            } catch (err) {
+                showToast && showToast(`UFM preview failed: ${err.message}`, "red");
+            }
+        }
+
+        // Save Now from inside the UFM preview modal: trigger the standard
+        // simulateSave() orchestrator and, on success, swap the inline
+        // message for the now-available derived preview. simulateSave() does
+        // not throw on failure — it surfaces its own toast and returns — so
+        // the success signal is state.caseId becoming non-null.
+        async function ufmPreviewSaveNow() {
+            await simulateSave();
+            if (!state.caseId) {
+                // Save failed; the simulateSave error toast already explains
+                // why. Leave the inline message visible so the operator can
+                // correct (e.g. add a Cause Number) and click Save Now again.
+                return;
+            }
+            const pre = document.getElementById('ufmPreviewContent');
+            const stamp = document.getElementById('ufmPreviewComputedAt');
+            const unsavedMsg = document.getElementById('ufmPreviewUnsavedMessage');
+            const copyBtn = document.getElementById('ufmPreviewCopyBtn');
+            if (!window.api) return;
+            try {
+                const body = await window.api.getUfmPreview(state.caseId);
+                if (stamp) stamp.textContent = `computed_at: ${body.computed_at || ''}`;
+                if (pre) {
+                    pre.textContent = JSON.stringify(body, null, 2);
+                    pre.classList.remove('hidden');
+                }
+                if (unsavedMsg) unsavedMsg.classList.add('hidden');
+                if (copyBtn) copyBtn.classList.remove('hidden');
             } catch (err) {
                 showToast && showToast(`UFM preview failed: ${err.message}`, "red");
             }
@@ -737,6 +857,7 @@ window.copyKeyTermsJson = copyKeyTermsJson;
 window.buildKeytermsPayload = buildKeytermsPayload;
 window.persistStage1ArtifactsIfBound = persistStage1ArtifactsIfBound;
 window.renderCaseContextBanner = renderCaseContextBanner;
+window.renderSaveIntakeButtons = renderSaveIntakeButtons;
 window.confirmUFMField = confirmUFMField;
 window.confirmAllPopulatedUFMFields = confirmAllPopulatedUFMFields;
 window.UFM_FIELD_IDS = UFM_FIELD_IDS;
@@ -744,3 +865,4 @@ window.UFM_FIELD_LABELS = UFM_FIELD_LABELS;
 window.openUfmPreviewModal = openUfmPreviewModal;
 window.closeUfmPreviewModal = closeUfmPreviewModal;
 window.copyUfmPreviewJson = copyUfmPreviewJson;
+window.ufmPreviewSaveNow = ufmPreviewSaveNow;

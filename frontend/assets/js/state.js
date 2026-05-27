@@ -46,6 +46,7 @@
                 custodialName: "",
                 requestingParty: "",
                 updatedAt: "",
+                dirtySinceSave: false,
                 strictLineLock: true,
                 signature: "",
                 certified: false

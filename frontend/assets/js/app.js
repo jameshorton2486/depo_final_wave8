@@ -224,7 +224,11 @@
 
                 if (typeof hydrateUFMFormFromState === 'function') hydrateUFMFormFromState();
                 if (typeof renderUFMTermsTable === 'function') renderUFMTermsTable();
+                // A freshly loaded case is clean by definition. Reset BEFORE
+                // banner render so State B (not State C) paints on first paint.
+                state.caseInfo.dirtySinceSave = false;
                 if (typeof renderCaseContextBanner === 'function') renderCaseContextBanner();
+                if (typeof renderSaveIntakeButtons === 'function') renderSaveIntakeButtons();
                 refreshCasePickerLabel();
 
                 if (!silent) {
@@ -256,7 +260,11 @@
             });
             if (typeof hydrateUFMFormFromState === 'function') hydrateUFMFormFromState();
             if (typeof renderUFMTermsTable === 'function') renderUFMTermsTable();
+            // A blank case is clean until the operator types — reset BEFORE
+            // banner render so State A paints with no stale dirty flag.
+            state.caseInfo.dirtySinceSave = false;
             if (typeof renderCaseContextBanner === 'function') renderCaseContextBanner();
+            if (typeof renderSaveIntakeButtons === 'function') renderSaveIntakeButtons();
             refreshCasePickerLabel();
             showToast("Started a new case. Fill in Stage 1 and click save.", "indigo");
         }
@@ -404,6 +412,7 @@
                 if (savedCase && savedCase.updated_at) {
                     state.caseInfo.updatedAt = savedCase.updated_at;
                 }
+                state.caseInfo.dirtySinceSave = false;
             } catch (err) {
                 summary.errors.push(`case: ${err.message}`);
                 console.error("Case save failed:", err);
@@ -500,6 +509,9 @@
             if (typeof renderCaseContextBanner === 'function') {
                 renderCaseContextBanner();
             }
+            if (typeof renderSaveIntakeButtons === 'function') {
+                renderSaveIntakeButtons();
+            }
         }
 
         window.addEventListener("screen:loaded", (e) => {
@@ -511,6 +523,7 @@
                     renderUFMTermsTable && renderUFMTermsTable();
                     checkSchemaValidationStatus && checkSchemaValidationStatus();
                     renderCaseContextBanner && renderCaseContextBanner();
+                    renderSaveIntakeButtons && renderSaveIntakeButtons();
                 } else if (stageNum === 2) {
                     renderFileQueue && renderFileQueue();
                     renderServerTranscriptJobs && renderServerTranscriptJobs();

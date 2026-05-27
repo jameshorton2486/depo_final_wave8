@@ -1,17 +1,28 @@
         <div id="stagePanel1" class="stage-panel flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
             <!-- Case-context banner. Rendered by renderCaseContextBanner(); states: EDITING / NEW CASE. -->
             <div id="caseContextBanner"
-                 class="bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 shadow-xl border-l-4 border-l-emerald-500 flex items-center justify-between gap-4 shrink-0">
+                 class="bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 shadow-xl border-l-4 border-l-amber-500 flex items-center justify-between gap-4 shrink-0">
                 <div class="min-w-0">
-                    <p id="caseContextBannerTitle" class="text-[10px] font-bold uppercase tracking-widest text-emerald-400">NEW CASE</p>
-                    <p id="caseContextBannerSubtitle" class="text-xs text-slate-300 truncate">Fill in the fields below and click Save to create a case.</p>
+                    <p id="caseContextBannerTitle" class="text-[10px] font-bold uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
+                        <span id="caseContextBannerDot" class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                        <span id="caseContextBannerTitleText">NEW CASE · Unsaved</span>
+                    </p>
+                    <p id="caseContextBannerSubtitle" class="text-xs text-slate-300 truncate">Fill in the fields below and click Save Intake to create the case.</p>
                 </div>
-                <button id="caseContextBannerNewBtn"
-                        type="button"
-                        onclick="newCase()"
-                        class="hidden shrink-0 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md shadow-indigo-600/20">
-                    Start New Case
-                </button>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button id="caseContextBannerSaveBtn"
+                            type="button"
+                            onclick="simulateSave()"
+                            class="hidden px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md shadow-indigo-600/20">
+                        Save Intake
+                    </button>
+                    <button id="caseContextBannerNewBtn"
+                            type="button"
+                            onclick="newCase()"
+                            class="hidden px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-400 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition-all">
+                        Start New Case
+                    </button>
+                </div>
             </div>
             <div class="flex-1 flex flex-col xl:flex-row gap-4">
             <!-- Left Column: Notice Upload and Raw Reporter Intake Notes -->
@@ -30,7 +41,17 @@
                                 <span>Spelled-Out Notes, Scheduling Emails & Terminology list</span>
                                 <span class="text-[10px] text-indigo-400 font-mono">Input Workspace</span>
                             </label>
-                            <textarea id="rawIntakeNotes" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-500 h-32 leading-relaxed" placeholder="Type or paste deposition schedules or word lists here..."></textarea>
+                            <textarea id="rawIntakeNotes" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-500 h-32 leading-relaxed" placeholder="Cause No: 25-CV-00001&#10;Deponent: John Doe&#10;Court Reporter: Jane Smith&#10;Deposition location: 123 Main St, San Antonio, TX&#10;Start time: 9:00 AM&#10;End time: 12:30 PM"></textarea>
+                            <p class="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                                Only labeled lines are parsed into intake fields. Use labels like
+                                <span class="font-mono text-slate-300">Cause No:</span>,
+                                <span class="font-mono text-slate-300">Deponent:</span>,
+                                <span class="font-mono text-slate-300">Court Reporter:</span>,
+                                <span class="font-mono text-slate-300">Deposition location:</span>,
+                                <span class="font-mono text-slate-300">Start time:</span>,
+                                <span class="font-mono text-slate-300">End time:</span>.
+                                Unlabeled text is preserved in reporter notes but not parsed.
+                            </p>
                         </div>
 
                         <!-- Dropzones (Audio dropzone removed in Wave 4 — audio upload now lives on Stage 2) -->
@@ -116,6 +137,13 @@
                                 Confirm All Populated
                             </button>
                         </div>
+                        <button id="saveIntakePrimaryBtn"
+                                type="button"
+                                onclick="simulateSave()"
+                                class="w-full mb-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-1.5">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            <span id="saveIntakePrimaryBtnLabel">Save Intake</span>
+                        </button>
                         <div id="validationSummaryBadge" class="text-[10px] rounded bg-slate-950 border border-slate-800 p-2 text-slate-400">
                             <p id="validationSummaryHeader" class="font-bold">0 of 16 required fields populated</p>
                             <ul id="validationSummaryList" class="mt-1 leading-relaxed text-slate-500"></ul>
@@ -252,7 +280,14 @@
                 </div>
 
                 <!-- Footer proceed action with alert checks -->
-                <div class="p-4 border-t border-slate-800 flex justify-end shrink-0">
+                <div class="p-4 border-t border-slate-800 flex justify-end gap-2 shrink-0">
+                    <button id="saveIntakeSecondaryBtn"
+                            type="button"
+                            onclick="simulateSave()"
+                            class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-400 text-indigo-300 hover:text-white rounded-xl text-sm font-semibold transition-all flex items-center gap-1.5">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                        <span id="saveIntakeSecondaryBtnLabel">Save Intake</span>
+                    </button>
                     <button id="btnProceedToStage2" onclick="confirmProceedWithSchemaCheck()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-1.5">
                         Proceed to Transcripts Engine
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 5l7 7-7 7"/></svg>
