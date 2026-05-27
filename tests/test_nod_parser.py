@@ -14,6 +14,7 @@ parser was designed against:
 from __future__ import annotations
 
 from backend.services.nod_parser import type_a_form, type_b_pleading
+from backend.services.nod_parser.orchestrator import ParsedNOD
 
 
 # --- Type B: legal pleading -----------------------------------------
@@ -300,3 +301,36 @@ def test_extract_all_firms():
     assert "Cukjati Law Firm" in joined
     assert "Brain and Spine" in joined
     assert "Brothers, Alvarado, Piazza & Cozort" in joined
+
+
+# --- Frontend payload shape: field_sources -------------------------
+
+def test_to_frontend_dict_emits_field_sources_for_populated_fields():
+    parsed = ParsedNOD(
+        ufm_cause="2024-CV-1234",
+        ufm_witness="Jane Doe",
+        ufm_court="225th Judicial District",
+        ufm_state="Texas",
+    )
+    payload = parsed.to_frontend_dict()
+    sources = payload["metadata"]["field_sources"]
+
+    assert sources["ufmCause"] == "nod_parser"
+    assert sources["ufmWitness"] == "nod_parser"
+    assert sources["ufmCourt"] == "nod_parser"
+    assert sources["ufmState"] == "nod_parser"
+
+
+def test_to_frontend_dict_omits_field_sources_for_empty_fields():
+    parsed = ParsedNOD(
+        ufm_cause="2024-CV-1234",
+        # ufm_witness intentionally left None
+    )
+    payload = parsed.to_frontend_dict()
+    sources = payload["metadata"]["field_sources"]
+
+    assert "ufmCause" in sources
+    # Empty fields must be ABSENT from the map, not present-with-None.
+    assert "ufmWitness" not in sources
+    assert "ufmCounty" not in sources
+    assert "ufmCSRName" not in sources

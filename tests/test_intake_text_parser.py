@@ -161,3 +161,19 @@ def test_endpoint_empty_text():
 def test_endpoint_rejects_oversized_text():
     res = client.post("/api/intake/parse-text", json={"text": "x" * 60_000})
     assert res.status_code == 413
+
+
+# --- field_sources emission (Stage 1 operator transparency) ----------
+
+def test_text_parser_emits_field_sources_for_populated_fields():
+    result = parse_intake_text(SAMPLE_NOTES)
+    sources = result["metadata"]["field_sources"]
+    # Every populated field must be tagged with text_parser.
+    for field_id, value in result["fields"].items():
+        if value:
+            assert sources.get(field_id) == "text_parser", field_id
+
+
+def test_text_parser_omits_field_sources_for_empty_input():
+    result = parse_intake_text("")
+    assert result["metadata"]["field_sources"] == {}
