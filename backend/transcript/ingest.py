@@ -24,6 +24,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from backend.ai_review import cross_speaker_flags
 from backend.config import settings
 from backend.deepgram import client as deepgram_client
 from backend.services import intake_store
@@ -154,6 +155,12 @@ def _run_pipeline(job: dict) -> None:
         utterances=normalized.utterances,
         words=normalized.words,
     )
+    # Cross-speaker contamination flags are derived review metadata keyed
+    # to canonical utterances. Canonical regeneration can replace the
+    # utterance set, so stale rows are intentionally cleared here. This is
+    # metadata cleanup only; it does not alter transcript content or ingest
+    # behavior.
+    cross_speaker_flags.invalidate_for_job(job_id)
 
     # ---- 6. Finalize ------------------------------------------------
     trepo.update_job(
