@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from backend.ai_review import client as ai_client
 from backend.ai_review.four_part_test import evaluate
 from backend.ai_review.speaker_map import _parse_map
@@ -17,7 +19,9 @@ from backend.ai_review.suggestions import (
     KIND_GARBLE,
     KIND_SPEAKER_MAP,
     STATUS_APPROVED,
+    STATUS_INFORMATIONAL,
     STATUS_PENDING,
+    STATUS_REJECTED,
     Suggestion,
 )
 
@@ -120,6 +124,56 @@ def test_review_queue_approve(client):
     assert got.status == STATUS_APPROVED
 
 
+def test_review_queue_pending_to_informational_allowed(client):
+    from backend.ai_review import review_queue
+
+    s = Suggestion(job_id="job-q3", kind=KIND_FLAG, reason="audit metadata")
+    review_queue.save_suggestions([s])
+    assert review_queue.set_status(s.suggestion_id, STATUS_INFORMATIONAL)
+    got = review_queue.get_suggestion(s.suggestion_id)
+    assert got.status == STATUS_INFORMATIONAL
+
+
+def test_review_queue_blocks_transitions_out_of_informational(client):
+    from backend.ai_review import review_queue
+
+    s = Suggestion(
+        job_id="job-q4",
+        kind=KIND_FLAG,
+        reason="audit metadata",
+        status=STATUS_INFORMATIONAL,
+    )
+    review_queue.save_suggestions([s])
+    with pytest.raises(ValueError):
+        review_queue.set_status(s.suggestion_id, STATUS_APPROVED)
+    with pytest.raises(ValueError):
+        review_queue.set_status(s.suggestion_id, STATUS_REJECTED)
+    with pytest.raises(ValueError):
+        review_queue.set_status(s.suggestion_id, STATUS_PENDING)
+
+
+def test_review_queue_blocks_approved_or_rejected_to_informational(client):
+    from backend.ai_review import review_queue
+
+    approved = Suggestion(
+        job_id="job-q5",
+        kind=KIND_FLAG,
+        reason="approved flag",
+        status=STATUS_APPROVED,
+    )
+    rejected = Suggestion(
+        job_id="job-q6",
+        kind=KIND_FLAG,
+        reason="rejected flag",
+        status=STATUS_REJECTED,
+    )
+    review_queue.save_suggestions([approved, rejected])
+    with pytest.raises(ValueError):
+        review_queue.set_status(approved.suggestion_id, STATUS_INFORMATIONAL)
+    with pytest.raises(ValueError):
+        review_queue.set_status(rejected.suggestion_id, STATUS_INFORMATIONAL)
+
+
 # --- endpoints ------------------------------------------------------
 
 def test_ai_status_endpoint(client):
@@ -205,3 +259,23 @@ def test_apply_approved_suggestion_mutates_working_not_raw(client, sample_job_wi
 
     listed = client.get(f"/api/transcripts/jobs/{sample_job_with_content}/provenance").json()
     assert any(ev["event_type"] == "ai_suggestion_applied" for ev in listed["events"])
+
+
+def test_api_rejects_approve_or_reject_on_informational_status(client):
+    from backend.ai_review import review_queue
+
+    s = Suggestion(
+        job_id="job-q7",
+        kind=KIND_FLAG,
+        reason="locked audit metadata",
+        status=STATUS_INFORMATIONAL,
+    )
+    review_queue.save_suggestions([s])
+
+    approve = client.post(f"/api/ai-review/suggestions/{s.suggestion_id}/approve")
+    assert approve.status_code == 400
+    assert "informational" in approve.json()["detail"].lower()
+
+    reject = client.post(f"/api/ai-review/suggestions/{s.suggestion_id}/reject")
+    assert reject.status_code == 400
+    assert "informational" in reject.json()["detail"].lower()

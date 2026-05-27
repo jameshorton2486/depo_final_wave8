@@ -35,6 +35,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from backend.config import settings
+from backend.ai_review import cross_speaker_flags
 from backend.models.transcripts import (
     DetectedSpeaker,
     ReadbackMatch,
@@ -530,6 +531,7 @@ def get_speaker_mapping(job_id: str) -> SpeakerMappingView:
         f"{len(detected)} raw speaker(s), {len(participants)} participant row(s), "
         f"prefill={is_prefill}"
     )
+    cross_speaker_summary = cross_speaker_flags.ensure_persisted(job_id)
 
     # Wave 11: deterministic candidate-name dropdown. Built from case
     # metadata when available; always includes the fixed court-officer
@@ -546,6 +548,7 @@ def get_speaker_mapping(job_id: str) -> SpeakerMappingView:
         ],
         is_prefill=is_prefill,
         candidate_names=candidate_names,
+        cross_speaker_flags=cross_speaker_summary,
     )
 
 
@@ -642,6 +645,7 @@ def save_speaker_mapping(
         )
 
     trepo.save_participants(job_id, to_save)
+    cross_speaker_flags.invalidate_for_job(job_id)
     logger.info(f"Saved speaker mapping for job {job_id}: {len(to_save)} participant(s)")
 
     # Wave 11 section 7.1: a confirmed mapping auto-triggers the
@@ -699,6 +703,7 @@ def apply_speaker_mapping(
             }
         )
     trepo.save_participants(job_id, to_save)
+    cross_speaker_flags.invalidate_for_job(job_id)
 
     # --- 2. Re-render WORKING from the canonical renderer -------------
     utterances = working_state_mod.get_working_utterances(job_id)

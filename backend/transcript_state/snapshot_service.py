@@ -204,7 +204,7 @@ def _capture_ai_trace(job_id: str) -> list:
         from backend.ai_review import review_queue
         out = []
         for s in review_queue.list_suggestions(job_id):
-            if s.status in ("approved", "rejected"):
+            if s.status in ("approved", "rejected", "informational"):
                 out.append({
                     "suggestion_id": s.suggestion_id,
                     "kind": s.kind,

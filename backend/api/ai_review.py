@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, status
 from loguru import logger
 
 from backend.ai_review import client as ai_client
+from backend.ai_review import cross_speaker_flags
 from backend.ai_review import generators as ai_generators
 from backend.ai_review import review_queue
 from backend.ai_review.speaker_map import generate_speaker_map_suggestion
@@ -156,6 +157,10 @@ def analyze_job(job_id: str, kinds: str | None = None) -> dict:
 def list_suggestions(job_id: str, status_filter: str | None = None) -> dict:
     """List a job's AI suggestions, optionally filtered by status."""
     suggestions = review_queue.list_suggestions(job_id, status_filter)
+    suggestions = [
+        s for s in suggestions
+        if not cross_speaker_flags._is_marker_payload(s.payload)
+    ]
     return {
         "job_id": job_id,
         "suggestions": [s.to_dict() for s in suggestions],
@@ -171,7 +176,13 @@ def approve_suggestion(suggestion_id: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Suggestion {suggestion_id} not found")
-    review_queue.set_status(suggestion_id, STATUS_APPROVED)
+    try:
+        review_queue.set_status(suggestion_id, STATUS_APPROVED)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     logger.info(f"AI suggestion {suggestion_id} approved by reporter.")
     return {"suggestion_id": suggestion_id, "status": STATUS_APPROVED}
 
@@ -184,7 +195,13 @@ def reject_suggestion(suggestion_id: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Suggestion {suggestion_id} not found")
-    review_queue.set_status(suggestion_id, STATUS_REJECTED)
+    try:
+        review_queue.set_status(suggestion_id, STATUS_REJECTED)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     return {"suggestion_id": suggestion_id, "status": STATUS_REJECTED}
 
 

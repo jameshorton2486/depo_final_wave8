@@ -10,6 +10,7 @@ import json
 
 from backend.ai_review.suggestions import (
     STATUS_APPROVED,
+    STATUS_INFORMATIONAL,
     STATUS_PENDING,
     STATUS_REJECTED,
     Suggestion,
@@ -82,8 +83,26 @@ def get_suggestion(suggestion_id: str) -> Suggestion | None:
 
 def set_status(suggestion_id: str, status: str) -> bool:
     """Approve or reject one suggestion. Returns True if a row changed."""
-    if status not in (STATUS_APPROVED, STATUS_REJECTED, STATUS_PENDING):
+    if status not in (
+        STATUS_APPROVED,
+        STATUS_REJECTED,
+        STATUS_PENDING,
+        STATUS_INFORMATIONAL,
+    ):
         raise ValueError(f"Invalid suggestion status: {status}")
+    suggestion = get_suggestion(suggestion_id)
+    if suggestion is None:
+        return False
+    current = suggestion.status
+    if current == STATUS_INFORMATIONAL:
+        raise ValueError(
+            "Informational suggestions are terminal and cannot transition to another status."
+        )
+    if status == STATUS_INFORMATIONAL:
+        if current != STATUS_PENDING:
+            raise ValueError(
+                "Only pending suggestions may transition to informational."
+            )
     with get_connection() as conn:
         cur = conn.execute(
             "UPDATE ai_suggestions SET status = ?, "
@@ -105,3 +124,20 @@ def update_payload(suggestion_id: str, patch: dict) -> bool:
             (json.dumps(payload) if payload else None, suggestion_id),
         )
     return cur.rowcount > 0
+
+
+def delete_suggestions(job_id: str, predicate=None) -> int:
+    """Delete a filtered subset of suggestions for one job."""
+    doomed = list_suggestions(job_id)
+    if predicate is not None:
+        doomed = [s for s in doomed if predicate(s)]
+    ids = [s.suggestion_id for s in doomed]
+    if not ids:
+        return 0
+    placeholders = ",".join("?" for _ in ids)
+    with get_connection() as conn:
+        cur = conn.execute(
+            f"DELETE FROM ai_suggestions WHERE suggestion_id IN ({placeholders})",
+            ids,
+        )
+    return cur.rowcount

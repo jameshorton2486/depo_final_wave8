@@ -311,7 +311,7 @@
             let currentLineNumberOnPage = 1;
             let currentPageNumber = 1;
 
-            state.transcriptLines.forEach((line) => {
+            state.transcriptLines.forEach((line, idx) => {
                 if (!line) return;
                 // If Texas strict limits are locked, wrap at 25 lines
                 if (state.caseInfo.strictLineLock && currentLineNumberOnPage > 25) {
@@ -329,6 +329,7 @@
                 const isOverride = !!line.isWorkingOverride;
                 const mutationSource = line.workingSource || '';
                 const isPlaybackLine = state.activePlayback && state.focusedLineId === line.id;
+                const previousLine = idx > 0 ? state.transcriptLines[idx - 1] : null;
                 row.className = `group flex items-start gap-4 hover:bg-slate-900/20 p-1.5 rounded transition-all cursor-pointer relative ${state.focusedLineId === line.id ? 'bg-indigo-950/20 border-l-2 border-indigo-500' : ''} ${isOverride ? 'ring-1 ring-emerald-500/20' : ''} ${isPlaybackLine ? 'shadow-[0_0_0_1px_rgba(34,197,94,0.3)]' : ''}`;
                 row.id = line.id;
                 row.setAttribute('onclick', `focusLineRow('${line.id}')`);
@@ -386,19 +387,29 @@
                 const speakerLabel = isSystemRow
                     ? 'WORKSPACE SYSTEM'
                     : (line.speaker || (line.speakerIndex != null ? `Speaker ${line.speakerIndex}` : 'Unassigned Speaker'));
+                const previousIsSystemRow = !previousLine || !previousLine.jobId;
+                const sameSpeakerRun = !isSystemRow
+                    && !previousIsSystemRow
+                    && previousLine.jobId === line.jobId
+                    && previousLine.speakerIndex === line.speakerIndex
+                    && (previousLine.speaker || '') === (line.speaker || '');
+                const showSpeakerHeader = isSystemRow || !sameSpeakerRun;
                 // In Word mode, colloquy lines show speaker inline (meta line is hidden).
                 var colloquySpeakerHtml = '';
-                if (!isSystemRow && line.type !== 'Q' && line.type !== 'A') {
+                if (!isSystemRow && showSpeakerHeader && line.type !== 'Q' && line.type !== 'A') {
                     colloquySpeakerHtml = `<span class="transcript-colloquy-speaker hidden mr-1">${_speakerMapEsc ? _speakerMapEsc(speakerLabel) : speakerLabel}:</span>`;
                 }
-
-                textBlock.innerHTML = `
-                    <div class="transcript-meta flex items-center gap-2 mb-1 select-none">
+                const speakerMetaHtml = showSpeakerHeader
+                    ? `<div class="transcript-meta flex items-center gap-2 mb-1 select-none">
                         <span class="text-[9px] font-bold text-slate-500 tracking-wider">${speakerLabel}</span>
                         ${sourceBadge}
                         ${line.exhibit ? `<span class="text-[8px] px-1 bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 rounded">EXHIBIT ${line.exhibit} MARKED</span>` : ''}
                         ${line.startTime != null && !isSystemRow ? `<span class="text-[8px] text-slate-600 font-mono">@ ${Number(line.startTime || 0).toFixed(1)}s</span>` : ''}
-                    </div>
+                    </div>`
+                    : `<div class="mb-3"></div>`;
+
+                textBlock.innerHTML = `
+                    ${speakerMetaHtml}
                     <div class="transcript-line outline-none focus:bg-indigo-500/5 focus:rounded p-0.5 whitespace-pre-wrap ${isSystemRow ? 'italic text-slate-500' : ''}" contenteditable="${!isSystemRow ? 'true' : 'false'}" spellcheck="false" onblur="handleTextEdit('${line.id}', this.innerHTML)">
                         ${colloquySpeakerHtml}${prefixHtml}${textContentHtml}
                     </div>
@@ -809,6 +820,62 @@
             ).join("");
         }
 
+        function _crossSpeakerBanner(view) {
+            const summary = view && view.cross_speaker_flags;
+            if (!summary) return "";
+            const locked = !!summary.certified_locked;
+            const total = Number(summary.total || 0);
+            const high = Number(summary.mid_utterance_change || 0);
+            const flicker = Number(summary.flicker || 0);
+            const shortTurn = Number(summary.short_turn || 0);
+            const lower = flicker + shortTurn;
+            const jump = "setWorkspaceMode('suggestions'); var q = document.getElementById('aiSuggestionsList'); if (q && q.scrollIntoView) q.scrollIntoView({ behavior: 'smooth', block: 'start' });";
+            if (total === 0) {
+                return `
+                    <div class="mx-3 mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-3 py-2 text-[10px] text-emerald-300">
+                        No cross-speaker contamination flags detected in this transcript job.${locked ? ' Audit metadata is read-only because a certification snapshot is locked.' : ''}
+                    </div>
+                `;
+            }
+            return `
+                <div class="mx-3 mt-3 rounded-xl border ${locked ? 'border-indigo-500/20 bg-indigo-500/8' : 'border-amber-500/20 bg-amber-500/8'} px-3 py-2.5 text-[10px] leading-relaxed">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="font-semibold ${locked ? 'text-indigo-300' : 'text-amber-300'}">
+                                ${high} high-confidence cross-speaker turn${high === 1 ? '' : 's'}, ${lower} lower-confidence flicker / short-turn flag${lower === 1 ? '' : 's'}.
+                            </p>
+                            <p class="mt-1 text-slate-300">
+                                ${locked
+                                    ? 'Informational audit metadata only. This transcript has a locked certification snapshot, so these flags are read-only.'
+                                    : 'Review these flags before confirming speaker mapping. They never reassign speakers automatically.'}
+                            </p>
+                            <details class="mt-2 text-slate-400">
+                                <summary class="text-[10px] font-semibold text-slate-400">Severity breakdown</summary>
+                                <div class="mt-2 grid grid-cols-3 gap-2">
+                                    <div class="rounded-lg border border-red-500/20 bg-slate-950/50 px-2 py-1.5">
+                                        <div class="text-[9px] uppercase tracking-wider text-red-300">Mid-turn</div>
+                                        <div class="text-sm font-bold text-white">${high}</div>
+                                    </div>
+                                    <div class="rounded-lg border border-amber-500/20 bg-slate-950/50 px-2 py-1.5">
+                                        <div class="text-[9px] uppercase tracking-wider text-amber-300">Flicker</div>
+                                        <div class="text-sm font-bold text-white">${flicker}</div>
+                                    </div>
+                                    <div class="rounded-lg border border-sky-500/20 bg-slate-950/50 px-2 py-1.5">
+                                        <div class="text-[9px] uppercase tracking-wider text-sky-300">Short turn</div>
+                                        <div class="text-sm font-bold text-white">${shortTurn}</div>
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+                        <button onclick="${jump}"
+                            class="shrink-0 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950 hover:bg-slate-900 text-[10px] font-semibold text-slate-200 hover:text-white transition-all">
+                            Open Review Queue
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
         /**
          * Hard rule: after an honorific period there is exactly ONE space.
          * Collapses any run of 2+ spaces that immediately follows MR./MS./MRS./DR.
@@ -950,6 +1017,7 @@
                             <div class="text-[11px] font-semibold text-slate-300 truncate">${multiJob ? '&#x1F4C1; ' : ''}${_speakerMapEsc(view.source_filename)}</div>
                             ${badge}
                         </div>
+                        ${_crossSpeakerBanner(view)}
                         <div class="px-3 py-1.5">${rows || '<p class="text-[10px] text-slate-500 italic py-2">No speakers detected.</p>'}</div>
                     </div>
                 `;
@@ -1426,6 +1494,8 @@ async function loadAISuggestions(jobId) {
     try {
         const res = await window.api.listAISuggestions(jobId);
         const visible = (res.suggestions || []).filter(s => s.status !== "rejected");
+        state.reviewFlagCount = visible.filter(s => s.kind === "flag" && s.status === "pending").length;
+        if (typeof updateStatsBar === "function") updateStatsBar();
         list.innerHTML = "";
         if (visible.length === 0) {
             list.innerHTML = `<p class="text-[10px] text-slate-600 italic">No active AI suggestions.</p>`;
@@ -1433,6 +1503,8 @@ async function loadAISuggestions(jobId) {
         }
         visible.forEach(s => list.appendChild(_aiSuggestionCard(s)));
     } catch (err) {
+        state.reviewFlagCount = 0;
+        if (typeof updateStatsBar === "function") updateStatsBar();
         list.innerHTML = `<p class="text-[10px] text-red-400">Could not load suggestions.</p>`;
     }
 }
@@ -1440,12 +1512,20 @@ async function loadAISuggestions(jobId) {
 function _aiSuggestionCard(s) {
     const card = document.createElement('div');
     card.className = "bg-slate-950/50 border border-slate-800 rounded-lg p-2 space-y-1.5";
+    const informational = s.status === 'informational';
+    const lockedInfo = informational || !!(s.payload && s.payload.locked_informational);
     // A suggestion that failed the four-part test is a flag, not an edit.
-    const badge = s.is_applicable_edit
+    const badge = lockedInfo
+        ? `<span class="text-[8px] px-1 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">AUDIT LOCKED</span>`
+        : s.is_applicable_edit
         ? `<span class="text-[8px] px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/25">EDIT</span>`
         : `<span class="text-[8px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/25">FLAG — REVIEW</span>`;
     const applied = !!(s.payload && s.payload.applied_to_transcript);
-    const statusBadge = s.status === 'approved'
+    const statusBadge = lockedInfo
+        ? `<span class="text-[8px] px-1 py-0.5 rounded bg-slate-900 text-indigo-300 border border-indigo-500/25">LOCKED</span>`
+        : informational
+        ? `<span class="text-[8px] px-1 py-0.5 rounded bg-slate-900 text-indigo-300 border border-indigo-500/25">INFORMATIONAL</span>`
+        : s.status === 'approved'
         ? applied
             ? `<span class="text-[8px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">APPLIED</span>`
             : `<span class="text-[8px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">APPROVED</span>`
@@ -1460,6 +1540,9 @@ function _aiSuggestionCard(s) {
             <span class="text-red-400">${s.before_text || ""}</span> →
             <span class="text-emerald-400">${s.after_text || ""}</span></div>`;
     }
+    if (s.payload && s.payload.word_excerpt) {
+        detail += `<div class="text-[9px] font-mono text-slate-500 mt-1">${(s.payload.word_excerpt || []).join(' | ')}</div>`;
+    }
     card.innerHTML = `
         <div class="flex items-center justify-between">
             <span class="text-[9px] font-bold uppercase tracking-wider text-slate-400">${s.kind}</span>
@@ -1468,7 +1551,11 @@ function _aiSuggestionCard(s) {
         <p class="text-[10px] text-slate-300 leading-snug">${s.reason || ""}</p>
         ${detail}
         <div class="flex gap-1 pt-0.5">
-            ${s.status === 'pending' ? `
+            ${lockedInfo ? `
+            <div class="flex-1 text-[9px] text-slate-400 bg-slate-900 rounded py-1 text-center border border-slate-800">
+                Locked certification audit metadata — review only
+            </div>
+            ` : s.status === 'pending' ? `
             <button onclick="approveAISuggestion('${s.suggestion_id}')"
                 class="flex-1 text-[9px] font-bold text-white bg-emerald-700 hover:bg-emerald-600 rounded py-1">Approve</button>
             <button onclick="rejectAISuggestion('${s.suggestion_id}')"

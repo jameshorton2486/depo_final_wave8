@@ -22,6 +22,9 @@ KIND_FLAG = "flag"
 STATUS_PENDING = "pending"
 STATUS_APPROVED = "approved"
 STATUS_REJECTED = "rejected"
+# Non-actionable, terminal audit metadata. Visible in review surfaces but
+# never reviewer-approved/rejected and never offered as an actionable edit.
+STATUS_INFORMATIONAL = "informational"
 
 
 @dataclass

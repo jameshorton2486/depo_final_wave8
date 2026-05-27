@@ -170,6 +170,15 @@ class RoleOption(BaseModel):
     label: str
 
 
+class CrossSpeakerFlagSummary(BaseModel):
+    total: int = 0
+    mid_utterance_change: int = 0
+    flicker: int = 0
+    short_turn: int = 0
+    certified_locked: bool = False
+    informational_only: bool = False
+
+
 class SpeakerMappingView(BaseModel):
     """GET payload for the Speaker Mapping step."""
 
@@ -180,6 +189,7 @@ class SpeakerMappingView(BaseModel):
     roles: list[RoleOption]
     is_prefill: bool  # True when `participants` is an unconfirmed first guess
     candidate_names: list[str] = []  # Wave 11: finished speaker-label dropdown
+    cross_speaker_flags: CrossSpeakerFlagSummary | None = None
 
 
 class SpeakerMappingSaveRequest(BaseModel):
