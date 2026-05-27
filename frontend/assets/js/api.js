@@ -32,6 +32,7 @@
             court: row.judicial_district || row.court_district || '',
             county: row.county || '',
             state: row.state || 'Texas',
+            updatedAt: row.updated_at || '',
         };
     }
 
@@ -147,6 +148,7 @@
             raw_intake_notes: stage1.rawIntakeNotes || '',
             parser_metadata: stage1.parserMetadata || {},
             keyterms: stage1.keytermEntries || [],
+            field_confirmations: stage1.field_confirmations || {},
         };
     }
 
@@ -323,6 +325,12 @@
         },
         getStage1Artifacts(caseId) {
             return _fetch('GET', `/intake/cases/${encodeURIComponent(caseId)}`);
+        },
+        getDeepgramPreview(caseId) {
+            return _fetch('GET', `/intake/cases/${encodeURIComponent(caseId)}/deepgram-preview`);
+        },
+        getUfmPreview(caseId) {
+            return _fetch('GET', `/intake/cases/${encodeURIComponent(caseId)}/ufm-preview`);
         },
 
         // Transcripts (Stage 2)

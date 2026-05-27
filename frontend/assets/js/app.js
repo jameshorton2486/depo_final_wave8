@@ -69,6 +69,7 @@
                     warnings: [],
                     field_sources: {},
                 },
+                field_confirmations: {},
                 workspace: {
                     sessions: {},
                 },
@@ -142,6 +143,7 @@
                         ...defaultStage1State().parserMetadata,
                         ...(artifacts.parser_metadata || {}),
                     },
+                    field_confirmations: artifacts.field_confirmations || {},
                     workspace: artifacts.workspace || { sessions: {} },
                 };
                 const rawNotesField = document.getElementById('rawIntakeNotes');
@@ -222,6 +224,7 @@
 
                 if (typeof hydrateUFMFormFromState === 'function') hydrateUFMFormFromState();
                 if (typeof renderUFMTermsTable === 'function') renderUFMTermsTable();
+                if (typeof renderCaseContextBanner === 'function') renderCaseContextBanner();
                 refreshCasePickerLabel();
 
                 if (!silent) {
@@ -248,10 +251,12 @@
                 deponent: '', date: '', startTime: '', endTime: '',
                 address: '', csrName: '', csrLicense: '', firmReg: '', csrCertExp: '',
                 custodialName: '', requestingParty: '',
+                updatedAt: '',
                 signature: '', certified: false,
             });
             if (typeof hydrateUFMFormFromState === 'function') hydrateUFMFormFromState();
             if (typeof renderUFMTermsTable === 'function') renderUFMTermsTable();
+            if (typeof renderCaseContextBanner === 'function') renderCaseContextBanner();
             refreshCasePickerLabel();
             showToast("Started a new case. Fill in Stage 1 and click save.", "indigo");
         }
@@ -396,6 +401,9 @@
                     state.caseId = savedCase.case_id;
                     summary.case = "created";
                 }
+                if (savedCase && savedCase.updated_at) {
+                    state.caseInfo.updatedAt = savedCase.updated_at;
+                }
             } catch (err) {
                 summary.errors.push(`case: ${err.message}`);
                 console.error("Case save failed:", err);
@@ -459,6 +467,7 @@
                     const syncResult = await window.api.syncStage1Artifacts(state);
                     state.stage1.keytermEntries = (syncResult && syncResult.keyterms) || state.stage1.keytermEntries;
                     state.stage1.parserMetadata = (syncResult && syncResult.parser_metadata) || state.stage1.parserMetadata;
+                    state.stage1.field_confirmations = (syncResult && syncResult.field_confirmations) || state.stage1.field_confirmations;
                     state.stage1.workspace = (syncResult && syncResult.workspace) || state.stage1.workspace;
                 } catch (err) {
                     summary.errors.push(`stage1: ${err.message}`);
@@ -488,6 +497,9 @@
             if (typeof refreshCasePicker === 'function') {
                 refreshCasePicker();
             }
+            if (typeof renderCaseContextBanner === 'function') {
+                renderCaseContextBanner();
+            }
         }
 
         window.addEventListener("screen:loaded", (e) => {
@@ -498,6 +510,7 @@
                     hydrateUFMFormFromState && hydrateUFMFormFromState();
                     renderUFMTermsTable && renderUFMTermsTable();
                     checkSchemaValidationStatus && checkSchemaValidationStatus();
+                    renderCaseContextBanner && renderCaseContextBanner();
                 } else if (stageNum === 2) {
                     renderFileQueue && renderFileQueue();
                     renderServerTranscriptJobs && renderServerTranscriptJobs();

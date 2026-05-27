@@ -21,6 +21,7 @@
                     warnings: [],
                     field_sources: {},
                 },
+                field_confirmations: {},
                 workspace: {
                     sessions: {},
                 },
@@ -44,6 +45,7 @@
                 csrCertExp: "",
                 custodialName: "",
                 requestingParty: "",
+                updatedAt: "",
                 strictLineLock: true,
                 signature: "",
                 certified: false

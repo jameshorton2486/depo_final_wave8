@@ -1,3 +1,64 @@
+        // Canonical UFM field IDs. Must match backend intake_store.UFM_FIELD_IDS.
+        const UFM_FIELD_IDS = [
+            'ufmCause', 'ufmStyle', 'ufmCourt', 'ufmCounty', 'ufmState',
+            'ufmWitness', 'ufmDate', 'ufmStartTime', 'ufmEndTime', 'ufmAddress',
+            'ufmCSRName', 'ufmCSRLicense', 'ufmFirmReg', 'ufmCSRCertExp',
+            'ufmCustodialName', 'ufmRequestingParty',
+        ];
+
+        const UFM_FIELD_LABELS = {
+            ufmCause: 'Cause Number',
+            ufmStyle: 'Full Caption / Style',
+            ufmCourt: 'Court / Judicial District',
+            ufmCounty: 'County of Venue',
+            ufmState: 'State',
+            ufmWitness: 'Deponent / Witness Name',
+            ufmDate: 'Deposition Date',
+            ufmStartTime: 'Start Time',
+            ufmEndTime: 'End Time',
+            ufmAddress: 'Deposition Address',
+            ufmCSRName: 'CSR Officer Name',
+            ufmCSRLicense: 'CSR License Number',
+            ufmFirmReg: 'Firm Registration Number',
+            ufmCSRCertExp: 'CSR License Expiration',
+            ufmCustodialName: 'Custodial Attorney Name',
+            ufmRequestingParty: 'Requesting Firm / Party',
+        };
+
+        function renderCaseContextBanner() {
+            const banner = document.getElementById('caseContextBanner');
+            if (!banner) return;
+            const title = document.getElementById('caseContextBannerTitle');
+            const subtitle = document.getElementById('caseContextBannerSubtitle');
+            const btn = document.getElementById('caseContextBannerNewBtn');
+            if (!title || !subtitle || !btn) return;
+
+            if (state.caseId) {
+                const cause = (state.caseInfo.cause || '').trim() || '(unnamed case)';
+                const raw = state.caseInfo.updatedAt || '';
+                let stamp = 'last saved unknown';
+                if (raw) {
+                    const d = new Date(raw);
+                    if (!isNaN(d.getTime())) {
+                        stamp = `last saved ${d.toISOString()}`;
+                    }
+                }
+                title.innerText = 'EDITING EXISTING CASE';
+                title.className = 'text-[10px] font-bold uppercase tracking-widest text-indigo-400';
+                subtitle.innerText = `${cause} · ${stamp}`;
+                banner.classList.remove('border-l-emerald-500');
+                banner.classList.add('border-l-indigo-500');
+                btn.classList.remove('hidden');
+            } else {
+                title.innerText = 'NEW CASE';
+                title.className = 'text-[10px] font-bold uppercase tracking-widest text-emerald-400';
+                subtitle.innerText = 'Fill in the fields below and click Save to create a case.';
+                banner.classList.remove('border-l-indigo-500');
+                banner.classList.add('border-l-emerald-500');
+                btn.classList.add('hidden');
+            }
+        }
+
         function normalizeStage1KeytermSource(source) {
             const src = String(source || 'manual').trim().toLowerCase();
             if (src === 'notice_parser') return 'nod_parser';
@@ -64,6 +125,9 @@
                 if (result && result.parser_metadata) {
                     state.stage1.parserMetadata = result.parser_metadata;
                 }
+                if (result && result.field_confirmations) {
+                    state.stage1.field_confirmations = result.field_confirmations;
+                }
                 console.info('[DEPO-PRO] Stage 1 artifacts synchronized', {
                     reason: reason,
                     caseId: state.caseId,
@@ -98,9 +162,14 @@
 
         function applyParsedStage1Payload(payload) {
             const nextMeta = buildStage1ParserMetadata(payload);
+            const mergedSources = {
+                ...(state.stage1.parserMetadata.field_sources || {}),
+                ...(nextMeta.field_sources || {}),
+            };
             state.stage1.parserMetadata = {
                 ...state.stage1.parserMetadata,
                 ...nextMeta,
+                field_sources: mergedSources,
                 appearances: (nextMeta.appearances && nextMeta.appearances.length)
                     ? nextMeta.appearances
                     : state.stage1.parserMetadata.appearances,
@@ -114,50 +183,101 @@
             mergeStage1KeytermEntries(payload.keyterms || []);
         }
 
+        // Map UFM input ID → state.caseInfo key.
+        const UFM_ID_TO_CASEINFO = {
+            'ufmCause': 'cause',
+            'ufmStyle': 'caption',
+            'ufmCourt': 'court',
+            'ufmCounty': 'county',
+            'ufmState': 'state',
+            'ufmWitness': 'deponent',
+            'ufmDate': 'date',
+            'ufmStartTime': 'startTime',
+            'ufmEndTime': 'endTime',
+            'ufmAddress': 'address',
+            'ufmCSRName': 'csrName',
+            'ufmCSRLicense': 'csrLicense',
+            'ufmFirmReg': 'firmReg',
+            'ufmCSRCertExp': 'csrCertExp',
+            'ufmCustodialName': 'custodialName',
+            'ufmRequestingParty': 'requestingParty',
+        };
+
+        function renderUFMValidationBadge(fieldId, badge, val) {
+            // Three-state badge: MISSING (red) / AUTO-POPULATED (amber) / ✓ CONFIRMED (green).
+            // Source and confirmation are two ORTHOGONAL axes. Source attribution
+            // is preserved through persistence; the badge only depends on (value,
+            // confirmed) per CLAUDE.md transparency rules — a parser-populated
+            // value is never displayed as "verified" until the operator attests.
+            if (!badge) return;
+            const confirmed = state.stage1.field_confirmations
+                && state.stage1.field_confirmations[fieldId] === 'confirmed';
+
+            if (val === '') {
+                badge.innerText = 'MISSING';
+                badge.className = 'ufm-val-badge absolute right-2 top-6 text-[8px] px-1 py-0.2 rounded bg-red-500/10 text-red-400';
+                badge.title = 'No value entered.';
+                badge.style.cursor = 'default';
+                badge.onclick = null;
+            } else if (confirmed) {
+                badge.innerText = '✓ CONFIRMED';
+                badge.className = 'ufm-val-badge absolute right-2 top-6 text-[8px] px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-400';
+                badge.title = 'Operator-attested. Editing this field will clear the confirmation.';
+                badge.style.cursor = 'default';
+                badge.onclick = null;
+            } else {
+                badge.innerText = 'AUTO · CONFIRM?';
+                badge.className = 'ufm-val-badge absolute right-2 top-6 text-[8px] px-1 py-0.2 rounded bg-amber-500/10 text-amber-400 cursor-pointer hover:bg-amber-500/20';
+                badge.title = 'Value present but not yet attested by the operator. Click to confirm.';
+                badge.style.cursor = 'pointer';
+                badge.onclick = () => confirmUFMField(fieldId);
+            }
+        }
+
+        function renderUFMInputBorder(inputEl, val) {
+            const baseInput = inputEl.tagName === 'TEXTAREA'
+                ? 'w-full bg-slate-900 text-xs px-2.5 py-1 rounded-lg text-white focus:outline-none h-12 leading-normal'
+                : 'w-full bg-slate-900 text-xs px-2.5 py-1 rounded-lg text-white focus:outline-none';
+            const confirmed = state.stage1.field_confirmations
+                && state.stage1.field_confirmations[inputEl.id] === 'confirmed';
+            let border;
+            if (val === '') {
+                border = 'border border-red-500/30';
+            } else if (confirmed) {
+                border = 'border border-emerald-500/30';
+            } else {
+                border = 'border border-amber-500/30';
+            }
+            // Preserve font-mono if it was on the original markup.
+            const mono = inputEl.className.includes('font-mono') ? ' font-mono' : '';
+            inputEl.className = `${baseInput} ${border}${mono}`;
+        }
+
         function validateUFMField(inputEl, label) {
             const val = inputEl.value.trim();
             const badge = inputEl.parentElement.querySelector('.ufm-val-badge');
+            const fieldId = inputEl.id;
 
-            // Map inputs to state case schema
-            const idMap = {
-                'ufmCause': 'cause',
-                'ufmStyle': 'caption',
-                'ufmCourt': 'court',
-                'ufmCounty': 'county',
-                'ufmState': 'state',
-                'ufmWitness': 'deponent',
-                'ufmDate': 'date',
-                'ufmStartTime': 'startTime',
-                'ufmEndTime': 'endTime',
-                'ufmAddress': 'address',
-                'ufmCSRName': 'csrName',
-                'ufmCSRLicense': 'csrLicense',
-                'ufmFirmReg': 'firmReg',
-                'ufmCSRCertExp': 'csrCertExp',
-                'ufmCustodialName': 'custodialName',
-                'ufmRequestingParty': 'requestingParty'
-            };
-
-            const stateField = idMap[inputEl.id];
+            const stateField = UFM_ID_TO_CASEINFO[fieldId];
             if (stateField) {
                 state.caseInfo[stateField] = val;
             }
 
-            if (val === "") {
-                inputEl.className = "w-full bg-slate-900 border border-red-500/30 text-xs px-2.5 py-1 rounded-lg text-white focus:outline-none";
-                if (badge) {
-                    badge.innerText = "MISSING";
-                    badge.className = "ufm-val-badge absolute right-2 top-6 text-[8px] px-1 py-0.2 rounded bg-red-500/10 text-red-400";
-                }
-            } else {
-                inputEl.className = "w-full bg-slate-900 border border-emerald-500/30 text-xs px-2.5 py-1 rounded-lg text-white focus:outline-none";
-                if (badge) {
-                    badge.innerText = "✓ VERIFIED";
-                    badge.className = "ufm-val-badge absolute right-2 top-6 text-[8px] px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-400";
-                }
+            // Editing a confirmed field clears its confirmation. The check
+            // runs on every input event; if the value is currently
+            // different from what we have stored as confirmed, drop it.
+            if (state.stage1.field_confirmations
+                && state.stage1.field_confirmations[fieldId] === 'confirmed'
+                && inputEl.dataset.confirmedValue !== undefined
+                && inputEl.dataset.confirmedValue !== val) {
+                delete state.stage1.field_confirmations[fieldId];
+                delete inputEl.dataset.confirmedValue;
             }
 
-            // Sync legacy global mirrors if present (no-op when those nodes don't exist in current shell)
+            renderUFMInputBorder(inputEl, val);
+            renderUFMValidationBadge(fieldId, badge, val);
+
+            // Sync legacy global mirrors if present.
             if (stateField === 'caption') {
                 const mirror = document.getElementById('caseCaption');
                 if (mirror) mirror.value = val;
@@ -170,32 +290,83 @@
             checkSchemaValidationStatus();
         }
 
-        // Run validation calculations over all fields
+        function confirmUFMField(fieldId) {
+            const el = document.getElementById(fieldId);
+            if (!el) return;
+            const val = el.value.trim();
+            if (!val) return;  // can't confirm an empty field
+            if (!state.stage1.field_confirmations) {
+                state.stage1.field_confirmations = {};
+            }
+            state.stage1.field_confirmations[fieldId] = 'confirmed';
+            el.dataset.confirmedValue = val;
+            renderUFMInputBorder(el, val);
+            const badge = el.parentElement.querySelector('.ufm-val-badge');
+            renderUFMValidationBadge(fieldId, badge, val);
+            checkSchemaValidationStatus();
+            persistStage1ArtifactsIfBound('field-confirmed');
+        }
+
+        function confirmAllPopulatedUFMFields() {
+            if (!state.stage1.field_confirmations) {
+                state.stage1.field_confirmations = {};
+            }
+            let confirmed = 0;
+            UFM_FIELD_IDS.forEach(fieldId => {
+                const el = document.getElementById(fieldId);
+                if (!el) return;
+                const val = el.value.trim();
+                if (!val) return;
+                state.stage1.field_confirmations[fieldId] = 'confirmed';
+                el.dataset.confirmedValue = val;
+                renderUFMInputBorder(el, val);
+                const badge = el.parentElement.querySelector('.ufm-val-badge');
+                renderUFMValidationBadge(fieldId, badge, val);
+                confirmed += 1;
+            });
+            checkSchemaValidationStatus();
+            persistStage1ArtifactsIfBound('confirm-all');
+            showToast(`Confirmed ${confirmed} populated field${confirmed === 1 ? '' : 's'}.`, 'emerald');
+        }
+
+        // Enumerate missing required fields and operator confirmations.
+        // Deterministic, no graded score. Header is always `{N} of {R}
+        // required fields populated`; body lists each missing field by
+        // human-readable label (or, when all are populated, the count of
+        // operator-confirmed values).
         function checkSchemaValidationStatus() {
             const summaryBadge = document.getElementById('validationSummaryBadge');
-            if (!summaryBadge) return;
+            const headerEl = document.getElementById('validationSummaryHeader');
+            const listEl = document.getElementById('validationSummaryList');
+            if (!summaryBadge || !headerEl || !listEl) return;
 
-            const fields = [
-                'ufmCause', 'ufmStyle', 'ufmCourt', 'ufmCounty', 'ufmState',
-                'ufmWitness', 'ufmDate', 'ufmStartTime', 'ufmEndTime', 'ufmAddress',
-                'ufmCSRName', 'ufmCSRLicense', 'ufmFirmReg', 'ufmCSRCertExp',
-                'ufmCustodialName', 'ufmRequestingParty'
-            ];
-
-            let incomplete = false;
-            fields.forEach(id => {
+            const required = UFM_FIELD_IDS.length;
+            const missing = [];
+            let populated = 0;
+            UFM_FIELD_IDS.forEach(id => {
                 const el = document.getElementById(id);
-                if (el && el.value.trim() === "") {
-                    incomplete = true;
+                const val = el ? el.value.trim() : '';
+                if (val === '') {
+                    missing.push(UFM_FIELD_LABELS[id] || id);
+                } else {
+                    populated += 1;
                 }
             });
+            const confirmations = state.stage1.field_confirmations || {};
+            const confirmed = UFM_FIELD_IDS.filter(id => confirmations[id] === 'confirmed').length;
 
-            if (incomplete) {
-                summaryBadge.innerText = "⚠️ SCHEMA INCOMPLETE";
-                summaryBadge.className = "text-[10px] px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 font-bold";
+            if (populated === required) {
+                summaryBadge.className = 'text-[10px] rounded bg-emerald-500/5 border border-emerald-500/20 p-2 text-emerald-300';
+                headerEl.className = 'font-bold text-emerald-400';
+                headerEl.innerText = `✓ All required fields populated. ${confirmed} of ${required} confirmed by operator.`;
+                listEl.innerHTML = '';
             } else {
-                summaryBadge.innerText = "✓ ALL FIELDS VERIFIED";
-                summaryBadge.className = "text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold";
+                summaryBadge.className = 'text-[10px] rounded bg-red-500/5 border border-red-500/20 p-2 text-slate-300';
+                headerEl.className = 'font-bold text-red-400';
+                headerEl.innerText = `${populated} of ${required} required fields populated`;
+                listEl.innerHTML = missing
+                    .map(label => `<li class="text-slate-400">• ${label}</li>`)
+                    .join('');
             }
         }
 
@@ -374,6 +545,15 @@
                 // `if (val)` guard meant starting a new case left stale
                 // text in the inputs because empty values were skipped.
                 el.value = state.caseInfo[stateField] || '';
+                // Seed dataset.confirmedValue from server-confirmed state so
+                // an unchanged value keeps its CONFIRMED badge after reload.
+                const confirmed = state.stage1.field_confirmations
+                    && state.stage1.field_confirmations[id] === 'confirmed';
+                if (confirmed) {
+                    el.dataset.confirmedValue = el.value.trim();
+                } else {
+                    delete el.dataset.confirmedValue;
+                }
                 validateUFMField(el, id);
             }
         }
@@ -406,9 +586,15 @@
 
         // Proceed confirmation check
         function confirmProceedWithSchemaCheck() {
-            const summaryBadge = document.getElementById('validationSummaryBadge');
-            if (summaryBadge.innerText.includes("INCOMPLETE")) {
-                showToast("Warning: Some mandatory UFM variables are blank. UFM generation may fail.", "amber");
+            const missingCount = UFM_FIELD_IDS.filter(id => {
+                const el = document.getElementById(id);
+                return !el || el.value.trim() === '';
+            }).length;
+            if (missingCount > 0) {
+                showToast(
+                    `Warning: ${missingCount} required field(s) are blank. UFM generation may fail.`,
+                    "amber"
+                );
             }
             if (!state.caseId || !state.sessionId) {
                 showToast("Save Stage 1 Intake before proceeding. A valid case and session are required.", "red");
@@ -437,12 +623,28 @@
             }
         }
 
-        function openKeyTermsJsonModal() {
-            const payload = buildKeytermsPayload();
+        async function openKeyTermsJsonModal() {
             const pre = document.getElementById('keytermsJsonContent');
-            if (pre) pre.textContent = JSON.stringify(payload, null, 2);
+            const stamp = document.getElementById('keytermsJsonComputedAt');
             const modal = document.getElementById('keytermsJsonModal');
-            if (modal) modal.classList.remove('hidden');
+            if (!pre || !modal) return;
+
+            let body;
+            if (state.caseId && window.api) {
+                try {
+                    body = await window.api.getDeepgramPreview(state.caseId);
+                    if (stamp) stamp.textContent = `computed_at: ${body.computed_at || ''}`;
+                } catch (err) {
+                    showToast && showToast(`Deepgram preview failed: ${err.message}`, "red");
+                    body = buildLocalDeepgramFallback();
+                    if (stamp) stamp.textContent = `local fallback · ${new Date().toISOString()}`;
+                }
+            } else {
+                body = buildLocalDeepgramFallback();
+                if (stamp) stamp.textContent = `local fallback · ${new Date().toISOString()}`;
+            }
+            pre.textContent = JSON.stringify(body, null, 2);
+            modal.classList.remove('hidden');
         }
 
         function closeKeyTermsJsonModal() {
@@ -454,11 +656,27 @@
             const pre = document.getElementById('keytermsJsonContent');
             if (pre && navigator.clipboard) {
                 navigator.clipboard.writeText(pre.textContent).then(() => {
-                    showToast && showToast("Keyterms JSON copied to clipboard.", "emerald");
+                    showToast && showToast("Deepgram request copied to clipboard.", "emerald");
                 });
             }
         }
 
+        // Fallback view (case not yet saved): shows just the keyterms list.
+        // The real Deepgram request params are fetched via the preview
+        // endpoint once the case has been persisted.
+        function buildLocalDeepgramFallback() {
+            const terms = collectStage1KeytermEntries();
+            return {
+                case_id: state.caseId || null,
+                computed_at: new Date().toISOString(),
+                deepgram_request: null,
+                keyterms: terms,
+                keyterms_count: terms.length,
+                note: "Save the case to fetch the live Deepgram request preview.",
+            };
+        }
+
+        // Retained for any callers/tests that built a local-keyterms payload.
         function buildKeytermsPayload() {
             const terms = collectStage1KeytermEntries();
             return {
@@ -468,6 +686,40 @@
                 generated_at: new Date().toISOString(),
                 keyterms: terms
             };
+        }
+
+        async function openUfmPreviewModal() {
+            const pre = document.getElementById('ufmPreviewContent');
+            const stamp = document.getElementById('ufmPreviewComputedAt');
+            const modal = document.getElementById('ufmPreviewModal');
+            if (!pre || !modal) return;
+
+            if (!state.caseId || !window.api) {
+                showToast && showToast("Save the case before viewing the UFM payload.", "amber");
+                return;
+            }
+            try {
+                const body = await window.api.getUfmPreview(state.caseId);
+                if (stamp) stamp.textContent = `computed_at: ${body.computed_at || ''}`;
+                pre.textContent = JSON.stringify(body, null, 2);
+                modal.classList.remove('hidden');
+            } catch (err) {
+                showToast && showToast(`UFM preview failed: ${err.message}`, "red");
+            }
+        }
+
+        function closeUfmPreviewModal() {
+            const modal = document.getElementById('ufmPreviewModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function copyUfmPreviewJson() {
+            const pre = document.getElementById('ufmPreviewContent');
+            if (pre && navigator.clipboard) {
+                navigator.clipboard.writeText(pre.textContent).then(() => {
+                    showToast && showToast("UFM payload copied to clipboard.", "emerald");
+                });
+            }
         }
 
 
@@ -484,3 +736,11 @@ window.closeKeyTermsJsonModal = closeKeyTermsJsonModal;
 window.copyKeyTermsJson = copyKeyTermsJson;
 window.buildKeytermsPayload = buildKeytermsPayload;
 window.persistStage1ArtifactsIfBound = persistStage1ArtifactsIfBound;
+window.renderCaseContextBanner = renderCaseContextBanner;
+window.confirmUFMField = confirmUFMField;
+window.confirmAllPopulatedUFMFields = confirmAllPopulatedUFMFields;
+window.UFM_FIELD_IDS = UFM_FIELD_IDS;
+window.UFM_FIELD_LABELS = UFM_FIELD_LABELS;
+window.openUfmPreviewModal = openUfmPreviewModal;
+window.closeUfmPreviewModal = closeUfmPreviewModal;
+window.copyUfmPreviewJson = copyUfmPreviewJson;
