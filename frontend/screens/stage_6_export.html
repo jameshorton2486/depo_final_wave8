@@ -30,14 +30,14 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Export Authority Source</label>
+                            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Export Source</label>
                             <select id="exportSourceSelect" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
                                 <option value="working" selected>Current Working Transcript (Editable)</option>
                                 <option value="certified">Latest Locked Certification Snapshot (Frozen)</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5 font-mono">Custom Watermark text</label>
+                            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5 font-mono">Watermark Text</label>
                             <input type="text" value="CERTIFIED ORIGINAL TRANSCRIPT" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-sans">
                         </div>
                         <div class="md:col-span-2">
@@ -68,7 +68,7 @@
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="text-xs font-bold uppercase tracking-widest text-indigo-400 flex items-center gap-2">
                             <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
-                            Sealed Transcript Layout Preview
+                            TRANSCRIPT PREVIEW
                         </h3>
                         <button onclick="refreshExportPreview()" id="refreshPreviewBtn"
                             class="text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg px-2.5 py-1 transition-all">

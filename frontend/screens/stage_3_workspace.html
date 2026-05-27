@@ -1,10 +1,10 @@
         <div id="stagePanel3" class="stage-panel flex-1 flex overflow-hidden">
 
             <!-- LEFT SIDEBAR: Context Navigation, Pipeline Rules, & learned memory -->
-            <aside class="w-80 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 overflow-hidden">
+            <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 overflow-hidden">
                 <div class="flex-1 flex flex-col overflow-hidden">
                     <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-                        <span class="text-xs font-bold uppercase tracking-wider text-indigo-400">Context & Pipeline Sandbox</span>
+                        <span class="text-xs font-bold uppercase tracking-wider text-indigo-400">Correction Tools</span>
                         <span id="flagCount" class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[10px] font-bold border border-amber-500/20">3 pending flags</span>
                     </div>
 
@@ -14,36 +14,36 @@
                         <!-- Programmatic & AI Processing Pipeline Sandbox -->
                         <div class="bg-slate-950 rounded-xl p-3.5 border border-slate-850 space-y-3">
                             <div class="flex items-center justify-between">
-                                <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Preprocessing Pipeline</span>
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Correction Rules</span>
                                 <span class="text-[9px] text-slate-500 font-mono">Sandbox</span>
                             </div>
-                            <p class="text-[11px] text-slate-400 leading-relaxed font-sans">Run programmatic python-style rules (RegEx transformations) and Visual Basic macros on raw speech before deploying AI assist.</p>
+                            <p class="text-[11px] text-slate-400 leading-relaxed font-sans">Apply regex find-and-replace rules to the working transcript, then optionally run an AI review pass.</p>
 
                             <!-- Custom Regex Rules Builder -->
                             <div class="space-y-2">
                                 <div>
-                                    <label class="block text-[9px] uppercase tracking-wider text-slate-500 mb-1">Step 1: Code Pattern (RegEx Find)</label>
+                                    <label class="block text-[9px] uppercase tracking-wider text-slate-500 mb-1">Find Pattern (RegEx)</label>
                                     <input id="regexFindInput" type="text" value="\btrinaty\b" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-white font-mono">
                                 </div>
                                 <div>
-                                    <label class="block text-[9px] uppercase tracking-wider text-slate-500 mb-1">Step 2: Replace String (Python Rule)</label>
+                                    <label class="block text-[9px] uppercase tracking-wider text-slate-500 mb-1">Replace With</label>
                                     <input id="regexReplaceInput" type="text" value="Trinity" class="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-white font-mono">
                                 </div>
                                 <button onclick="runCustomRegexRulePipeline()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded transition-all">
-                                    Execute Python Rules Engine
+                                    Apply Rule
                                 </button>
                             </div>
 
                             <!-- AI Layer Configuration -->
                             <div class="pt-3 border-t border-slate-850 space-y-2 font-sans">
-                                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Step 3: AI Suggestions Pass</span>
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">AI Review Pass</span>
                                 <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
                                     <span>AI Temperature</span>
                                     <span id="sliderVal">Strict (0.2)</span>
                                 </div>
                                 <input type="range" min="1" max="3" value="1" oninput="updateTemperatureSlider(this.value)" class="w-full accent-indigo-500 bg-slate-900 rounded-lg appearance-none h-1 cursor-pointer">
                                 <button onclick="triggerAISuggestionExtraction()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold rounded transition-all">
-                                    Extract Deepgram Suggestions
+                                    Run AI Review
                                 </button>
                             </div>
                         </div>
@@ -51,11 +51,11 @@
                         <!-- Authoritative speaker mapping now lives here in
                              Stage 3. Raw diarization is preserved; the
                              reporter maps raw speaker ids to participants. -->
-                        <div class="font-sans">
-                            <div class="flex items-center justify-between mb-2">
+                        <details open class="font-sans">
+                            <summary class="flex items-center justify-between mb-2 py-1">
                                 <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Speaker Mapping</span>
                                 <span id="workspaceSpeakerMappingStatus" class="text-[9px] font-mono text-slate-600">idle</span>
-                            </div>
+                            </summary>
                             <p class="text-[11px] text-slate-400 mb-2 leading-relaxed">Stage 3 is the sole speaker authority. Save names and roles here to bind raw diarization clusters to the working transcript without altering timestamps or speaker ids.</p>
                             <div class="bg-slate-950 rounded-xl p-3 border border-slate-800 space-y-3 max-h-72 overflow-y-auto" id="workspaceSpeakerMappingRoot">
                                 <p class="text-[10px] text-slate-600 italic">Load a transcript job from Stage 2 to review diarization and assign speakers.</p>
@@ -68,14 +68,14 @@
                                     Save Speaker Mapping
                                 </button>
                             </div>
-                        </div>
+                        </details>
 
                         <!-- AI Review Queue (Wave 16) -->
-                        <div class="font-sans">
-                            <div class="flex items-center justify-between mb-2">
+                        <details open class="font-sans">
+                            <summary class="flex items-center justify-between mb-2 py-1">
                                 <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">AI Review Queue</span>
                                 <span id="aiReviewStatus" class="text-[9px] font-mono text-slate-600">checking…</span>
-                            </div>
+                            </summary>
                             <p class="text-[10px] text-slate-500 mb-2 leading-relaxed">AI suggestions are advisory. Approval logs reporter consent; transcript text changes only after the separate Apply action.</p>
                             <button id="aiSpeakerMapBtn" onclick="requestAISpeakerMap()"
                                 class="w-full text-[10px] font-semibold text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/60 rounded-lg py-1.5 transition-all mb-2">
@@ -88,25 +88,25 @@
                             <div class="space-y-1.5" id="aiSuggestionsList">
                                 <p class="text-[10px] text-slate-600 italic">No AI suggestions yet.</p>
                             </div>
-                        </div>
+                        </details>
 
                         <!-- Correction Memory: Real-time learned values -->
-                        <div class="font-sans">
-                            <div class="flex items-center justify-between mb-2">
+                        <details class="font-sans">
+                            <summary class="flex items-center justify-between mb-2 py-1">
                                 <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Correction Memory</span>
                                 <span class="text-[9px] text-cyan-400 bg-cyan-500/10 px-1 py-0.2 rounded font-semibold font-mono">Auto-Learn</span>
-                            </div>
+                            </summary>
                             <p class="text-[11px] text-slate-400 mb-2 leading-relaxed">Explicitly captured corrections that align automatically across cases.</p>
                             <div class="bg-slate-950 rounded-xl p-3 border border-slate-800 max-h-48 overflow-y-auto space-y-2" id="correctionsMemoryContainer">
                                 <!-- Loaded from JS -->
                             </div>
-                        </div>
+                        </details>
                     </div>
                 </div>
 
                 <!-- Footer details -->
                 <div class="p-4 border-t border-slate-800 bg-slate-950/60 text-[10px] text-slate-500 font-mono leading-relaxed select-none">
-                    AI assists spelling alignments & structure. Absolute authority rests entirely with the signatory reporter.
+                    AI suggestions are advisory only. The signatory reporter holds sole authority over the final transcript.
                 </div>
             </aside>
 
@@ -189,12 +189,16 @@
             </section>
 
             <!-- RIGHT SIDEBAR: Waveforms, Suggestions, & Detailed Provenance Timeline -->
-            <aside class="w-80 bg-slate-900 border-l border-slate-800 flex flex-col justify-between shrink-0 overflow-hidden">
+            <aside id="stage3RightPanel" class="w-72 sidebar-collapse-transition bg-slate-900 border-l border-slate-800 flex flex-col justify-between shrink-0 overflow-hidden">
                 <div class="flex-1 flex flex-col overflow-hidden">
 
                     <!-- Top Section: Mode Context Banner -->
                     <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
                         <span class="text-xs font-bold uppercase tracking-wider text-cyan-400" id="rightPanelTitle">Audio & Context Wave</span>
+                        <button
+                            onclick="var p = document.getElementById('stage3RightPanel'); p.classList.toggle('stage3-right-collapsed');"
+                            class="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-all text-xs font-mono select-none"
+                            title="Collapse/expand context panel">⟩⟩</button>
                         <span class="text-[10px] font-mono text-slate-500" id="cursorLineTracker">LINE 1</span>
                     </div>
 
@@ -318,16 +322,16 @@
                         </div>
 
                         <!-- Legal Provenance Timeline -->
-                        <div class="pt-4 border-t border-slate-800 font-sans">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Chain of Custody Provenance</span>
+                        <details class="pt-4 border-t border-slate-800 font-sans">
+                            <summary class="flex items-center justify-between mb-2 cursor-pointer">
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Chain of Custody</span>
                                 <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                            </div>
-                            <p class="text-[11px] text-slate-400 mb-3 leading-relaxed font-sans">Cryptographic tracking of edits to ensure complete judicial confidence in the transcript.</p>
+                            </summary>
+                            <p class="text-[11px] text-slate-400 mb-3 leading-relaxed font-sans">Audit trail of all transcript edits, corrections, and AI actions.</p>
                             <div class="bg-slate-950 rounded-xl p-3.5 border border-slate-800 space-y-4" id="provenanceLogContainer">
                                 <!-- Dynamically loaded from JS state -->
                             </div>
-                        </div>
+                        </details>
 
                     </div>
                 </div>

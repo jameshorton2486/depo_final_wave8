@@ -1,6 +1,7 @@
-        <div id="stagePanel5" class="stage-panel flex-1 flex flex-col p-6 items-center justify-center overflow-y-auto">
-            <div class="max-w-xl w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
-                <div class="absolute inset-0 bg-gradient-to-b from-indigo-500/5 to-transparent pointer-events-none"></div>
+        <div id="stagePanel5" class="stage-panel flex-1 flex flex-row gap-6 p-6 overflow-y-auto">
+            <div class="flex-1 min-w-0 flex flex-col">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-to-b from-indigo-500/5 to-transparent pointer-events-none"></div>
 
                 <!-- UNLOCKED CERT CARD -->
                 <div class="relative z-10 text-center" id="certPreLock">
@@ -8,7 +9,7 @@
                         <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                     </div>
 
-                    <h2 class="text-2xl font-bold text-white mb-2">Certification Snapshot & Package Freeze</h2>
+                    <h2 class="text-2xl font-bold text-white mb-2">Certification Lock</h2>
                     <p class="text-sm text-slate-400 mb-4 max-w-sm mx-auto">Certification freezes a historical snapshot and certified package. Your working transcript can continue evolving afterward; a later certification creates a new immutable version without altering older certified records.</p>
                     <div id="certificationModelNote" class="mb-4 bg-slate-950 border border-slate-800 rounded-xl p-3 text-left text-xs text-slate-300 leading-relaxed">
                         <p><span class="text-amber-400 font-semibold">Working transcript:</span> editable current record.</p>
@@ -86,7 +87,7 @@
                     <div class="flex items-center justify-between pt-4 border-t border-slate-800 gap-4 select-none">
                         <button onclick="goToStage(3)" class="text-slate-400 hover:text-white text-xs font-semibold font-mono">Cancel / Return to Edits</button>
                         <button id="signBtn" onclick="signTranscript()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-1.5">
-                            Freeze New Certified Version
+                            Lock & Certify Transcript
                         </button>
                     </div>
                 </div>
@@ -97,7 +98,7 @@
                         <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                     </div>
 
-                    <h2 class="text-2xl font-bold text-white mb-2">Transcript Sealed & Certified</h2>
+                    <h2 class="text-2xl font-bold text-white mb-2">Transcript Certified</h2>
                     <p class="text-sm text-slate-400 mb-6 max-w-sm mx-auto">This certified package is immutable. The working transcript may continue evolving and can be certified again as a new version later.</p>
 
                     <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-left font-mono text-xs text-slate-400 space-y-2 mb-6">
@@ -109,15 +110,19 @@
                     </div>
 
                     <button onclick="goToStage(6)" class="w-full px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-600/20">
-                        Continue to Export Authority Panel
+                        Proceed to Export
                     </button>
                 </div>
-
-                <div class="relative z-10 mt-6 border-t border-slate-800 pt-5">
-                    <div class="flex items-center justify-between gap-3 mb-3">
+                </div>
+            </div>
+            </div>
+            <div class="w-96 shrink-0 flex flex-col gap-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                    <div class="flex items-center justify-between gap-3 mb-4">
                         <h3 class="text-xs font-bold uppercase tracking-widest text-indigo-400">Certification Lineage</h3>
                         <span id="certLineageStatus" class="text-[10px] font-mono text-slate-500">No transcript job loaded.</span>
                     </div>
+
                     <div id="certLineageSummary" class="grid grid-cols-3 gap-3 mb-3">
                         <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
                             <div class="text-[10px] text-slate-500 uppercase tracking-wider">Certified Packages</div>
@@ -132,9 +137,19 @@
                             <div id="certLatestVersion" class="text-sm font-bold text-emerald-400 mt-1">None</div>
                         </div>
                     </div>
-                    <div id="certHistoryList" class="space-y-2 max-h-56 overflow-y-auto">
-                        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs text-slate-500 italic">Certification history will appear here after a transcript job is loaded.</div>
+
+                    <div id="certHistoryList" class="space-y-2 max-h-[60vh] overflow-y-auto">
+                        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs text-slate-500 italic">
+                            Certification history will appear here after a transcript job is loaded.
+                        </div>
                     </div>
+                </div>
+
+                <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400 leading-relaxed space-y-2">
+                    <p><span class="text-amber-400 font-semibold">Working transcript:</span> editable current record.</p>
+                    <p><span class="text-emerald-400 font-semibold">Certified snapshot:</span> immutable historical transcript state.</p>
+                    <p><span class="text-indigo-400 font-semibold">Certified package:</span> frozen export assembled from the locked snapshot.</p>
+                    <p class="text-slate-500 pt-2 border-t border-slate-800">A later certification creates a new immutable version without altering older certified records.</p>
                 </div>
             </div>
         </div>

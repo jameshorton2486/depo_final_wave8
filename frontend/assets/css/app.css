@@ -91,3 +91,39 @@
         .animate-flash {
             animation: highlight-flash 1.5s ease-out;
         }
+
+        /* ===== Collapsible right sidebar (Stage 3) ===== */
+        /* Applied/removed by the collapse toggle button via classList.toggle */
+        .stage3-right-collapsed {
+            width: 0 !important;
+            min-width: 0 !important;
+            padding: 0 !important;
+            border-left-width: 0 !important;
+            overflow: hidden;
+            transition: width 0.2s ease, min-width 0.2s ease;
+        }
+
+        /* Smooth sidebar width transition when collapsing */
+        .sidebar-collapse-transition {
+            transition: width 0.2s ease;
+        }
+
+        /* ===== <details> disclosure triangle styling for sidebar sections ===== */
+        /* Removes default browser marker and replaces with a custom indicator */
+        details > summary {
+            list-style: none;
+            cursor: pointer;
+            user-select: none;
+        }
+        details > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        /* Slide-in animation (already used by toast — ensure it exists) */
+        @keyframes slide-in {
+            from { opacity: 0; transform: translateY(4px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-in {
+            animation: slide-in 0.15s ease-out forwards;
+        }
