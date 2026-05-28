@@ -132,6 +132,15 @@ def _body_lines_for(working_line: dict, body_width: int) -> list[tuple[str, str]
 
     out: list[tuple[str, str]] = []
 
+    if line_type in ("examination", "by_line"):
+        # Structural opening-ritual headers emitted by stage_s (the
+        # EXAMINATION header and the BY MR./MS. ___: attribution line).
+        # Render the text as-is with the existing "examination" line kind:
+        # no QA indent, no appended colon (a by_line already carries its
+        # single colon). Reuses existing header geometry -- no new tabs.
+        out.append((text, "examination"))
+        return out
+
     if line_type in ("Q", "A"):
         prefix = "Q.  " if line_type == "Q" else "A.  "
         wrapped = _wrap_text(text, body_width - len(QA_INDENT) - len(prefix))
@@ -314,15 +323,13 @@ def render_export_with_layout(
     if proceedings_date:
         stream.append((f"PROCEEDINGS, {proceedings_date.upper()}", "proceedings"))
         stream.append(("", "blank"))
-    if witness:
-        stream.append((f"{witness.upper()},", "proceedings"))
-        stream.append(("having been first duly sworn, testified as follows:",
-                       "proceedings"))
-        stream.append(("", "blank"))
-    if examining_attorney_label:
-        stream.append((f"EXAMINATION BY {examining_attorney_label.upper()}:",
-                       "examination"))
-        stream.append(("", "blank"))
+    # The opening ritual (witness-sworn block, EXAMINATION header, BY-line)
+    # is owned by backend/stage_s/ and arrives in `working_lines`; this
+    # module no longer emits a parallel ritual here. The witness-sworn
+    # line specifically is gated (detect/flag/attest) in stage_s and is
+    # never auto-asserted from a witness name. The `witness` and
+    # `examining_attorney_label` params are retained for document metadata
+    # / caller compatibility but no longer drive front-matter content.
 
     # Body.
     for wl in working_lines:

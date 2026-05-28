@@ -1024,8 +1024,10 @@ def _build_export_document(job_id: str):
             continue
         if ln.line_type == "parenthetical":
             lt = "colloquy"
-        elif ln.line_type == "by_line":
-            lt = "colloquy"
+        elif ln.line_type in ("by_line", "examination"):
+            # Carry structural ritual headers through unflattened so the
+            # export renders them as proper headers, not colloquy.
+            lt = ln.line_type
         elif ln.line_type in ("Q", "A", "colloquy", "flagged"):
             lt = ln.line_type
         else:
@@ -1158,8 +1160,10 @@ def _build_export_document_from_snapshot(snapshot_state: dict, *, snapshot_id: s
             continue
         if ln.line_type == "parenthetical":
             lt = "colloquy"
-        elif ln.line_type == "by_line":
-            lt = "colloquy"
+        elif ln.line_type in ("by_line", "examination"):
+            # Carry structural ritual headers through unflattened so the
+            # export renders them as proper headers, not colloquy.
+            lt = ln.line_type
         elif ln.line_type in ("Q", "A", "colloquy", "flagged"):
             lt = ln.line_type
         else:

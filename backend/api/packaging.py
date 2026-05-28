@@ -461,8 +461,10 @@ def _build_paginated_and_index_inputs_from_snapshot_state(snapshot_state: dict):
             continue
         if ln.line_type == "parenthetical":
             lt = "colloquy"
-        elif ln.line_type == "by_line":
-            lt = "colloquy"
+        elif ln.line_type in ("by_line", "examination"):
+            # Carry structural ritual headers through unflattened so the
+            # export renders them as proper headers, not colloquy.
+            lt = ln.line_type
         elif ln.line_type in ("Q", "A", "colloquy", "flagged"):
             lt = ln.line_type
         else:
