@@ -91,3 +91,50 @@ def test_by_line_carries_examiner_label():
     by_lines = [ln for ln in r.lines if ln.line_type == "by_line"]
     assert len(by_lines) == 1
     assert by_lines[0].text == "BY MR. COLEMAN:"
+
+
+# --- Phase 4: inline re-attribution on resumption --------------------------
+
+def test_reattribution_after_colloquy_interruption():
+    # Q, then a defending-attorney colloquy (breaks attribution), then the
+    # examiner resumes -> the resumed Q gets the inline (BY MR. COLEMAN).
+    utts = [
+        _utt("u1", 0, 1, "I don't remember that."),
+        _utt("u2", 1, 5, "I think we met at your office."),
+        _utt("u3", 2, 1, "Yes, that's mine."),
+    ]
+    r = render_stage_s(utts, _participants())
+    q_lines = [ln for ln in r.lines if ln.line_type == "Q"]
+    # First Q has no inline marker (it follows the opening BY-line).
+    assert "(BY MR. COLEMAN)" not in q_lines[0].text
+    # Resumed Q after the colloquy carries the inline re-attribution.
+    assert q_lines[1].text.startswith("(BY MR. COLEMAN)")
+    assert "Yes, that's mine." in q_lines[1].text
+
+
+def test_no_reattribution_in_unbroken_exchange():
+    # Q -> A -> Q with no interruption: the second Q gets no inline marker.
+    utts = [
+        _utt("u1", 0, 1, "State your name."),
+        _utt("u2", 1, 2, "David Shaw."),
+        _utt("u3", 2, 1, "Where do you live?"),
+    ]
+    r = render_stage_s(utts, _participants())
+    q_lines = [ln for ln in r.lines if ln.line_type == "Q"]
+    assert all("(BY MR." not in ln.text for ln in q_lines)
+    assert q_lines[1].text == "Where do you live?"
+
+
+def test_same_speaker_continuation_preserves_verbatim_dash():
+    # GUARDRAIL: when the SAME examiner completes their own interrupted
+    # sentence, the prior emitted line is their own Q (not a colloquy /
+    # parenthetical), so attribution is NOT broken -> no inline marker is
+    # added, and a verbatim leading dash in the text is preserved as-is.
+    utts = [
+        _utt("u1", 0, 1, "You can still answer --"),
+        _utt("u2", 1, 1, "-- the question."),
+    ]
+    r = render_stage_s(utts, _participants())
+    q_lines = [ln for ln in r.lines if ln.line_type == "Q"]
+    assert q_lines[1].text == "-- the question."
+    assert "(BY MR." not in q_lines[1].text
