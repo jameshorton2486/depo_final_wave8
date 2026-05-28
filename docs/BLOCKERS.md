@@ -21,6 +21,24 @@ implementation blockers unless explicitly reopened.
 - **Inline video review in Stage 3** — add browser-native `.mp4` / `.mov`
   review in Stage 3 using the same transcript-driven seek/highlight authority
   model established by Audio Part B.
+- **Consecutive same-speaker utterance grouping (render-layer, unbuilt)** —
+  Deepgram splits a single spoken turn into multiple utterances (e.g. a
+  witness's address `12135 / Stoney Glen / San Antonio, Texas / 78247` = 4
+  utterances; heath_thomas job `c8f7384e…`), and each renders as its own
+  `Q.`/`A.` line. Ingest deliberately does NOT merge (raw fidelity /
+  verbatim-first; `assembler.py`: *"Speaker-run grouping … is a render-layer
+  concern (Stage 3), not a transcript transformation"*). Verified 2026-05-28
+  that no render surface currently implements it: `stage_s/renderer.py` (one
+  `qa_line`/utterance), `transcript/render.py` (one `WorkingLine`/utterance),
+  `export_render.py` `_body_lines_for` (wraps one line, never coalesces), and
+  `frontend/stage_3.js` `compileAndRenderTranscript` (one row/line). The fix
+  belongs at the **render layer** — deterministic, raw untouched, reversible:
+  coalesce consecutive on-record utterances of the same mapped role/speaker
+  into one Q/A turn. Do **not** merge at ingest: the `mvp-e2e-validation`
+  branch's `_merge_consecutive_speaker_utterances` (in `assembler.py`) does
+  exactly that and is correctly rejected — it mutates the immutable raw layer.
+  Scope together with the per-utterance speaker re-attribution work (same
+  raw-diarization-granularity root cause).
 
 ## Active Policy Question
 
