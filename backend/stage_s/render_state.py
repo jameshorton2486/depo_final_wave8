@@ -19,6 +19,7 @@ class RenderState:
     record_state: str = ON_RECORD
     current_examiner_label: str = ""   # e.g. "MR. VANCE"
     examiner_seen: bool = False
+    examination_opened: bool = False   # QA-01: opening ritual emitted once
 
     def is_on_record(self) -> bool:
         return self.record_state == ON_RECORD

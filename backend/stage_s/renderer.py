@@ -19,6 +19,7 @@ from backend.stage_s.audit import AuditLog
 from backend.stage_s.line_builder import (
     by_attribution_line,
     colloquy_line,
+    examination_header_line,
     flagged_line,
     parenthetical_line,
     qa_line,
@@ -173,6 +174,21 @@ def render_stage_s(
 
         # --- normal Q / A / colloquy ---------------------------------
         if mode in ("Q", "A"):
+            # QA-01 opening ritual: on the first examining-attorney
+            # utterance, emit the EXAMINATION header + BY-line exactly
+            # once, immediately before the first Q. The witness-sworn
+            # block is intentionally deferred (no deterministic sworn
+            # signal is available; see the Stage 3 audit). Q/A typing
+            # for the first question is gated behind this emission.
+            if mode == "Q" and not state.examination_opened:
+                lines.append(examination_header_line(_next_id()))
+                by_ln = by_attribution_line(_next_id(), label)
+                by_ln.audit_note = "Initial examination attribution at examination open."
+                lines.append(by_ln)
+                state.examination_opened = True
+                audit.record("examination_opened",
+                             f"Examination opened; EXAMINATION + BY {label}.",
+                             [utt_id])
             if mode == "Q":
                 state.set_examiner(label)
             body = text

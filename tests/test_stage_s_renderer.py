@@ -29,7 +29,12 @@ def _utt(uid, idx, spk, text):
 def test_examining_attorney_renders_as_q():
     utts = [_utt("u1", 0, 1, "State your name.")]
     r = render_stage_s(utts, _participants())
-    assert r.lines[0].line_type == "Q"
+    # The QA-01 opening ritual (EXAMINATION header + BY-line) now precedes
+    # the first question. The examining attorney's utterance is still
+    # typed Q -- it is now the last of the three opening lines.
+    assert [ln.line_type for ln in r.lines] == ["examination", "by_line", "Q"]
+    assert r.lines[-1].line_type == "Q"
+    assert r.lines[-1].text == "State your name."
 
 
 def test_witness_renders_as_a():
