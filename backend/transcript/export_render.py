@@ -323,15 +323,13 @@ def render_export_with_layout(
     if proceedings_date:
         stream.append((f"PROCEEDINGS, {proceedings_date.upper()}", "proceedings"))
         stream.append(("", "blank"))
-    if witness:
-        stream.append((f"{witness.upper()},", "proceedings"))
-        stream.append(("having been first duly sworn, testified as follows:",
-                       "proceedings"))
-        stream.append(("", "blank"))
-    if examining_attorney_label:
-        stream.append((f"EXAMINATION BY {examining_attorney_label.upper()}:",
-                       "examination"))
-        stream.append(("", "blank"))
+    # The opening ritual (witness-sworn block, EXAMINATION header, BY-line)
+    # is owned by backend/stage_s/ and arrives in `working_lines`; this
+    # module no longer emits a parallel ritual here. The witness-sworn
+    # line specifically is gated (detect/flag/attest) in stage_s and is
+    # never auto-asserted from a witness name. The `witness` and
+    # `examining_attorney_label` params are retained for document metadata
+    # / caller compatibility but no longer drive front-matter content.
 
     # Body.
     for wl in working_lines:

@@ -84,9 +84,15 @@ def test_render_is_deterministic():
     assert a == b
 
 
-def test_render_caption_and_header_block():
+def test_render_front_matter_excludes_ritual():
+    # The opening ritual (EXAMINATION header, BY-line) and the witness-sworn
+    # line are owned by backend/stage_s/ and arrive via working_lines -- so
+    # export_render no longer emits them from the witness / examiner params.
+    # Front matter is limited to the caption metadata and the PROCEEDINGS
+    # date header. Critically, NO "(...) duly sworn" line is auto-asserted
+    # from a witness name (that assertion is now gated in stage_s).
     doc = render_export_document(
-        _working_lines(2),
+        _working_lines(2),  # plain Q/A only -- no stage_s ritual lines supplied
         caption="SMITH vs. JONES",
         witness="Dr. Donald Leifer",
         proceedings_date="Tuesday, May 19, 2026",
@@ -95,7 +101,9 @@ def test_render_caption_and_header_block():
     assert doc.caption == "SMITH vs. JONES"
     texts = [l.text for p in doc.pages for l in p.lines]
     assert any("PROCEEDINGS" in t for t in texts)
-    assert any("EXAMINATION BY MR. VANCE" in t for t in texts)
+    # Front matter must NOT auto-emit the ritual or the sworn line:
+    assert not any("EXAMINATION BY MR. VANCE" in t for t in texts)
+    assert not any("sworn" in t.lower() for t in texts)
 
 
 def test_render_empty_transcript_is_safe():
