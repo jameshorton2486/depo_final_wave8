@@ -132,6 +132,15 @@ def _body_lines_for(working_line: dict, body_width: int) -> list[tuple[str, str]
 
     out: list[tuple[str, str]] = []
 
+    if line_type in ("examination", "by_line"):
+        # Structural opening-ritual headers emitted by stage_s (the
+        # EXAMINATION header and the BY MR./MS. ___: attribution line).
+        # Render the text as-is with the existing "examination" line kind:
+        # no QA indent, no appended colon (a by_line already carries its
+        # single colon). Reuses existing header geometry -- no new tabs.
+        out.append((text, "examination"))
+        return out
+
     if line_type in ("Q", "A"):
         prefix = "Q.  " if line_type == "Q" else "A.  "
         wrapped = _wrap_text(text, body_width - len(QA_INDENT) - len(prefix))
