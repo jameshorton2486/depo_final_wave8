@@ -28,7 +28,7 @@ from backend.ai_review import cross_speaker_flags
 from backend.config import settings
 from backend.deepgram import client as deepgram_client
 from backend.services import intake_store
-from backend.preprocessing import probe
+from backend.preprocessing import presets, probe
 from backend.transcript import assembler, packet
 from backend.transcript import repository as trepo
 
@@ -102,10 +102,22 @@ def _run_pipeline(job: dict) -> None:
     trepo.update_job(job_id, {"status": "preprocessing"})
     probed_duration = probe.probe_duration_seconds(audio_path) if audio_path else None
 
+    # Measure an acoustic profile and pick a Deepgram preset. The preset
+    # only tunes the SETTINGS used to produce the RAW; the RAW itself stays
+    # immutable. When profiling is unavailable (ffmpeg missing / probe
+    # None), fall back to base params (no override) and the default preset.
+    audio_profile = probe.probe_audio_profile(audio_path) if audio_path else None
+    preset = presets.classify_audio(audio_profile)
+    preset_override = preset.deepgram_params if audio_profile is not None else None
+    engine_name = f"deepgram-nova-3:{preset.name}"
+    profile_state = "measured" if audio_profile is not None else "unavailable->default"
+    logger.info(f"Audio preset for {job_id}: {preset.name} (profile={profile_state})")
+
     # ---- 2. Deepgram batch ASR (or offline fallback) ----------------
     trepo.update_job(job_id, {"status": "transcribing"})
     keyterms = load_keyterms(job.get("case_id"))
-    result = deepgram_client.transcribe_file(audio_path, keyterms)
+    result = deepgram_client.transcribe_file(
+        audio_path, keyterms, params_override=preset_override)
     transcription_source = result["source"]
     raw_response = result["response"]
 
@@ -125,10 +137,26 @@ def _run_pipeline(job: dict) -> None:
     out_dir = _transcripts_dir(job_id)
 
     # The raw provider response is itself archived, immutable.
+    import dataclasses
     import json
 
     (out_dir / "asr_response.json").write_text(
         json.dumps(raw_response, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    # Audio-profile sidecar: self-describing record of WHAT was measured
+    # and WHICH preset/params produced this RAW. Its own artifact, so no
+    # transcript layer is touched (single-layer compliance).
+    profile_doc = {
+        "profile": dataclasses.asdict(audio_profile) if audio_profile is not None else None,
+        "preset": preset.name,
+        "preset_rationale": preset.rationale,
+        "params_override": preset_override or {},
+        "profiling_available": audio_profile is not None,
+    }
+    (out_dir / "audio_profile.json").write_text(
+        json.dumps(profile_doc, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -137,7 +165,7 @@ def _run_pipeline(job: dict) -> None:
         source_filename=job["source_filename"],
         source_size_bytes=job.get("source_size_bytes", 0),
         transcription_source=transcription_source,
-        engine_name=job.get("engine", "deepgram-nova-3"),
+        engine_name=engine_name,
         normalized=normalized,
         keyterms=keyterms,
         audio_path=audio_path,
@@ -167,6 +195,7 @@ def _run_pipeline(job: dict) -> None:
         job_id,
         {
             "status": "completed",
+            "engine": engine_name,
             "transcription_source": transcription_source,
             "duration_seconds": normalized.duration_seconds,
             "word_count": normalized.word_count,
