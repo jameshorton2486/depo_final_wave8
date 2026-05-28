@@ -49,6 +49,31 @@ The transcript layers are not interchangeable.
 | CORRECTED / STRUCTURALLY RENDERED | `backend/corrections/`, `backend/stage_s/`, `backend/transcript/export_render.py` | Derived from working state; not a separate freeform persistence authority |
 | CERTIFIED | `backend/transcript_state/` locked snapshot + `backend/packaging/` certified package lineage | Immutable after certification |
 
+### Opening-ritual ownership (refinement, 2026-05-28)
+
+The "CORRECTED / STRUCTURALLY RENDERED" row above establishes the general
+principle that `backend/stage_s/` is a structural-rendering authority. This
+entry **newly** settles a specific case under that principle — it is a fresh
+assignment, not a pre-existing ruling:
+
+- **`backend/stage_s/` is the sole owner of the deposition opening ritual** —
+  the witness-sworn block, the `EXAMINATION` header, the `BY MR./MS. ___:`
+  attribution line, and inline `Q. (BY MR./MS. ___)` re-attribution. These are
+  emitted once, as structural render lines, by `backend/stage_s/renderer.py`.
+- **`backend/transcript/export_render.py` owns document layout/pagination and
+  no longer emits any opening ritual of its own.** It previously carried a
+  parallel front-matter ritual (witness name + an unconditional
+  "having been first duly sworn" line + an `EXAMINATION BY ___:` header); that
+  parallel ritual is removed. export_render renders the stage_s ritual lines
+  through to the page; it does not originate ritual content.
+
+Rationale: the two parallel rituals produced a duplicate `EXAMINATION` header
+and an unconditional witness-sworn assertion in the export preview and the
+snapshot export document. Per the no-parallel-systems principle, ritual
+ownership is consolidated to `backend/stage_s/`; `export_render.py` remains the
+export-layout authority. The witness-sworn line is added back, gated
+(detect/flag/attest), in a separate pass and never auto-asserted.
+
 ## Frontend / Backend Boundary
 
 - The frontend may present, stage, preview, and submit edits.
