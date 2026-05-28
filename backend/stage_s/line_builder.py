@@ -12,6 +12,7 @@ from backend.stage_s.models import (
     LINE_A,
     LINE_BY,
     LINE_COLLOQUY,
+    LINE_EXAMINATION,
     LINE_FLAGGED,
     LINE_PARENTHETICAL,
     LINE_Q,
@@ -114,6 +115,31 @@ def by_attribution_line(
         procedural=True,
         render_state=render_state,
         audit_note="Examination attribution re-emitted after resumption.",
+    )
+
+
+def examination_header_line(
+    line_id: str,
+    render_state: str = ON_RECORD,
+) -> RenderLine:
+    """Build an 'EXAMINATION' section header line.
+
+    A generated procedural line carrying the literal word EXAMINATION.
+    Tab level matches by_attribution_line (TAB_MARGIN): there is no
+    centered-header geometry primitive in this module, and inventing one
+    is out of scope for this pass. The export/geometry layer owns final
+    placement; this records the semantic line.
+    """
+    return RenderLine(
+        line_id=line_id,
+        line_type=LINE_EXAMINATION,
+        text="EXAMINATION",
+        speaker_label="",
+        source_utterance_ids=[],
+        tab_level=TAB_MARGIN,
+        procedural=True,
+        render_state=render_state,
+        audit_note="Examination section header emitted at examination start.",
     )
 
 
