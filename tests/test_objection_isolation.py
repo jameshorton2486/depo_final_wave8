@@ -89,7 +89,12 @@ def test_interrupted_question_gets_trailing_dash():
     assert q_lines[0].text.endswith("--")
 
 
-def test_resumed_question_gets_leading_dash():
+def test_resumed_question_after_objection_gets_inline_reattribution():
+    # A fresh question resuming after an objection interjection carries the
+    # inline "(BY MR. NUNEZ)" re-attribution and NO leading dash -- matching
+    # the source depositions (e.g. Shaw: 'Q.  (BY MR. COLEMAN)  ...' after
+    # 'Objection.  Form.'). The auto resumption dash is suppressed here; the
+    # marker carries the re-attribution.
     utts = [
         _utt("u1", 0, 1, "And were you employed there in 2019,"),
         _utt("u2", 1, 5, "Objection, form."),
@@ -97,7 +102,9 @@ def test_resumed_question_gets_leading_dash():
     ]
     r = render_stage_s(utts, _parts())
     q_lines = [l for l in r.lines if l.line_type == "Q"]
-    assert q_lines[1].text.startswith("--")
+    assert q_lines[1].text.startswith("(BY MR. NUNEZ)")
+    assert not q_lines[1].text.startswith("--")
+    assert "were you employed there in 2019?" in q_lines[1].text
 
 
 def test_objection_does_not_repeat_question_text():

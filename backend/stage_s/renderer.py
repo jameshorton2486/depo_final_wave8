@@ -19,12 +19,19 @@ from backend.stage_s.audit import AuditLog
 from backend.stage_s.line_builder import (
     by_attribution_line,
     colloquy_line,
+    examination_header_line,
     flagged_line,
     parenthetical_line,
     qa_line,
     qa_mode_for_role,
 )
-from backend.stage_s.models import OFF_RECORD, ON_RECORD, RenderLine
+from backend.stage_s.models import (
+    LINE_COLLOQUY,
+    LINE_PARENTHETICAL,
+    OFF_RECORD,
+    ON_RECORD,
+    RenderLine,
+)
 from backend.stage_s.objection_handler import (
     append_interruption_dash,
     looks_like_objection,
@@ -173,19 +180,59 @@ def render_stage_s(
 
         # --- normal Q / A / colloquy ---------------------------------
         if mode in ("Q", "A"):
+            # QA-01 opening ritual: on the first examining-attorney
+            # utterance, emit the EXAMINATION header + BY-line exactly
+            # once, immediately before the first Q. The witness-sworn
+            # block is intentionally deferred (no deterministic sworn
+            # signal is available; see the Stage 3 audit). Q/A typing
+            # for the first question is gated behind this emission.
+            if mode == "Q" and not state.examination_opened:
+                lines.append(examination_header_line(_next_id()))
+                by_ln = by_attribution_line(_next_id(), label)
+                by_ln.audit_note = "Initial examination attribution at examination open."
+                lines.append(by_ln)
+                state.examination_opened = True
+                audit.record("examination_opened",
+                             f"Examination opened; EXAMINATION + BY {label}.",
+                             [utt_id])
             if mode == "Q":
                 state.set_examiner(label)
             body = text
             note = ""
+            # Phase 4: did an interjection (a colloquy/objection or a
+            # parenthetical) break the attribution before this resumed Q?
+            # A same-speaker continuation has a prior Q/A line, not a
+            # colloquy/parenthetical, so this is False for it.
+            attribution_broken = (
+                mode == "Q" and bool(lines)
+                and lines[-1].line_type in (LINE_COLLOQUY, LINE_PARENTHETICAL)
+                and bool(state.current_examiner_label)
+            )
             if pending_resumption_dash:
-                body, inserted = prepend_resumption_dash(body)
-                if inserted:
-                    note = "Resumption dash prepended after objection."
-                    audit.record("dash_inserted",
-                                 "Prepended resumption dash.", [utt_id])
+                # The auto resumption dash is for a same-flow resume. When an
+                # interjection broke attribution, the inline "(BY MR. X)"
+                # marker carries the re-attribution and the source shows no
+                # leading dash -- so drop the auto dash here. A verbatim dash
+                # already in the utterance text is never touched.
+                if not attribution_broken:
+                    body, inserted = prepend_resumption_dash(body)
+                    if inserted:
+                        note = "Resumption dash prepended after objection."
+                        audit.record("dash_inserted",
+                                     "Prepended resumption dash.", [utt_id])
                 pending_resumption_dash = False
+            # Inline re-attribution. On a Q resuming after a broken
+            # attribution, re-state who is asking with "(BY MR./MS. X)". An
+            # unbroken Q->A->Q exchange gets no marker; the first Q after the
+            # opening BY-line gets none either (that line is a by_line).
+            by_label = state.current_examiner_label if attribution_broken else ""
             ln = qa_line(_next_id(), mode, body, [utt_id],
-                         render_state=ON_RECORD)
+                         render_state=ON_RECORD, by_label=by_label)
+            if by_label:
+                note = (note + " Inline re-attribution after broken "
+                        "attribution.").strip()
+                audit.record("reattribution",
+                             f"Inline (BY {by_label}) on resumed Q.", [utt_id])
             if note:
                 ln.audit_note = note
             lines.append(ln)

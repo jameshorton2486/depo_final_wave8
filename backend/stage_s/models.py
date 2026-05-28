@@ -20,6 +20,7 @@ LINE_A = "A"                       # witness answer
 LINE_COLLOQUY = "colloquy"         # named speaker, not Q/A
 LINE_PARENTHETICAL = "parenthetical"
 LINE_BY = "by_line"                # "BY MR. SMITH:" attribution line
+LINE_EXAMINATION = "examination"   # "EXAMINATION" section header
 LINE_FLAGGED = "flagged"           # unmapped cluster
 LINE_BLANK = "blank"
 

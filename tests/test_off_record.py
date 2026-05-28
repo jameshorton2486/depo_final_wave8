@@ -91,8 +91,10 @@ def test_on_record_reemits_by_line():
     ]
     r = render_stage_s(utts, _parts())
     by_lines = [l for l in r.lines if l.line_type == "by_line"]
-    assert len(by_lines) == 1
-    assert "BY MR. NUNEZ:" in by_lines[0].text
+    # Two BY-lines now: the opening-ritual attribution emitted before the
+    # first Q, and the resumption re-attribution after the recess.
+    assert len(by_lines) == 2
+    assert all("BY MR. NUNEZ:" in l.text for l in by_lines)
 
 
 def test_state_returns_to_on_record_after_resumption():
