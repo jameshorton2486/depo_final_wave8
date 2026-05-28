@@ -166,6 +166,7 @@ def update_job(job_id: str, patch: dict) -> Optional[dict]:
         "case_id",
         "session_id",
         "status",
+        "engine",
         "transcription_source",
         "error_message",
         "duration_seconds",

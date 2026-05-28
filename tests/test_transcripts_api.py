@@ -7,6 +7,7 @@ redirects SQLite and the data root into a tmp_path.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -74,6 +75,19 @@ def test_upload_creates_and_processes_job(client):
     assert processed["word_count"] > 0
     assert processed["utterance_count"] > 0
     assert processed["speaker_count"] >= 2
+
+    # Stage 2 audio-profile preset wiring: a completed ingestion writes the
+    # audio_profile.json sidecar next to raw.json, and the engine column
+    # carries the chosen preset suffix.
+    assert re.match(r"^deepgram-nova-3:[a-z_]+$", processed["engine"]), \
+        f"engine should carry a preset suffix, got {processed['engine']!r}"
+    out_dir = Path(processed["raw_packet_path"]).parent
+    sidecar = out_dir / "audio_profile.json"
+    assert sidecar.exists(), f"missing audio_profile.json in {out_dir}"
+    import json
+    doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert doc["preset"] in {"studio", "courtroom", "zoom_mixed", "phone"}
+    assert "preset_rationale" in doc and "profiling_available" in doc
 
 
 def test_rejects_unsupported_file_type(client):

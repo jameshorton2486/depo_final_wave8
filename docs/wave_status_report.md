@@ -135,6 +135,12 @@ Wave 21 moved the project from integration work into MVP validation:
    modules touched.
 6. Stage 1 UX polish (Save Intake button, saved/unsaved banner, UFM
    modal recovery, parser feedback) shipped on stage1/ux-polish.
+7. Stage 2 audio-profile preset library (on stage2/audio-presets):
+   `probe.probe_audio_profile` measures each file (rate, channels,
+   loudness, voice-activity, silence gaps) and a deterministic
+   `presets.classify_audio` picks one of four Deepgram presets
+   (studio/courtroom/zoom_mixed/phone), tuning only the settings used to
+   produce the immutable RAW. `filler_words=true` preserved on every path.
 
 The next work should come from `docs/audits/REAL_WORLD_VALIDATION_LOG.md`,
 not from assumptions that Waves 19–20 are still unwired.

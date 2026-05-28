@@ -113,13 +113,23 @@ def api_key_present() -> bool:
     return bool((os.getenv("DEEPGRAM_API_KEY") or "").strip())
 
 
-def transcribe_file(audio_path: str | Path, keyterms: list[str] | None = None) -> dict:
+def transcribe_file(
+    audio_path: str | Path,
+    keyterms: list[str] | None = None,
+    params_override: dict[str, str] | None = None,
+) -> dict:
     """Transcribe one media file.
 
     Returns a dict with:
         source    -- 'deepgram' or 'offline-fallback'
         response  -- the raw provider response (Deepgram JSON, or the
                      synthetic equivalent)
+
+    ``params_override`` is an optional dict of Deepgram batch parameters
+    (e.g. from an audio preset) that is merged onto DEEPGRAM_PARAMS with
+    the override winning. It applies only on the real REST path; the
+    offline fallback has no params and ignores it. Defaults to None so all
+    existing callers keep working unchanged.
 
     Never raises for the offline path. The real path raises
     DeepgramError on network/API failure so the caller can mark the job
@@ -143,7 +153,7 @@ def transcribe_file(audio_path: str | Path, keyterms: list[str] | None = None) -
 
     if api_key_present():
         logger.info(f"Deepgram: transcribing {audio_path.name} via REST API")
-        response = _transcribe_via_rest(audio_path, keyterms)
+        response = _transcribe_via_rest(audio_path, keyterms, params_override)
         return {"source": "deepgram", "response": response}
 
     logger.warning(
@@ -161,7 +171,11 @@ class DeepgramError(RuntimeError):
 # --------------------------------------------------------------------
 # Real path: Deepgram batch REST API (standard library only)
 # --------------------------------------------------------------------
-def _transcribe_via_rest(audio_path: Path, keyterms: list[str]) -> dict:
+def _transcribe_via_rest(
+    audio_path: Path,
+    keyterms: list[str],
+    params_override: dict[str, str] | None = None,
+) -> dict:
     api_key = (os.getenv("DEEPGRAM_API_KEY") or "").strip()
     if not audio_path.exists():
         raise DeepgramError(f"Audio file not found: {audio_path}")
@@ -175,9 +189,15 @@ def _transcribe_via_rest(audio_path: Path, keyterms: list[str]) -> dict:
             f"at {MAX_UPLOAD_BYTES} bytes. Split the file or pre-compress it."
         )
 
-    # Build the query string. keyterm may be repeated for nova-3 in-context
-    # vocabulary boosting; normalize_keyterms() handles the 100-term cap.
-    query_pairs = list(DEEPGRAM_PARAMS.items())
+    # Build the query string. A preset's params_override merges onto the
+    # base set (override wins); base keys like filler_words/model are never
+    # dropped by an override that doesn't mention them.
+    merged_params = {**DEEPGRAM_PARAMS, **(params_override or {})}
+    if params_override:
+        logger.info(f"Deepgram params (override applied): {merged_params}")
+    query_pairs = list(merged_params.items())
+    # keyterm may be repeated for nova-3 in-context vocabulary boosting;
+    # normalize_keyterms() handles the 100-term cap.
     for term in normalize_keyterms(keyterms):
         query_pairs.append(("keyterm", term))
     url = f"{DEEPGRAM_ENDPOINT}?{urllib.parse.urlencode(query_pairs)}"
