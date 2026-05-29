@@ -25,6 +25,7 @@ cap is reached. It is not sent to Deepgram.
 """
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 import re
 from typing import Optional
 
@@ -51,15 +52,10 @@ PRIORITY_LEGAL = 3
 # tends to garble -- NOT generic words like "objection" or "yes", which
 # Deepgram already transcribes correctly and which would only add noise.
 STANDARD_LEGAL_TERMS = [
-    "oral deposition",
-    "Notice of Intention to Take Oral Deposition",
-    "Texas Rules of Civil Procedure",
     "certified court reporter",
     "remote video conference",
     "stenographically",
     "audiovisual means",
-    "of counsel",
-    "read and sign",
     "civil action",
 ]
 
@@ -151,6 +147,53 @@ def _titlecase(s: str) -> str:
     return " ".join(parts).strip()
 
 
+_HONORIFIC_RE = re.compile(r"^(MR|MS|MRS|DR)\.?\s+", re.IGNORECASE)
+
+
+def _normalize_person_identity(name: str) -> tuple[str, str] | None:
+    clean = re.sub(r"\s+", " ", (name or "")).strip()
+    if not clean:
+        return None
+    clean = _HONORIFIC_RE.sub("", clean)
+    parts = [re.sub(r"[^A-Za-z]", "", p) for p in clean.split()]
+    parts = [p for p in parts if p]
+    if len(parts) < 2:
+        return None
+    first = parts[0].lower()
+    last = parts[-1].lower()
+    if len(first) == 1:
+        return None
+    return first, last
+
+
+def _prefer_more_complete_person_name(current: str, candidate: str) -> str:
+    current_parts = [p for p in current.split() if p]
+    candidate_parts = [p for p in candidate.split() if p]
+    if len(candidate_parts) != len(current_parts):
+        return candidate if len(candidate_parts) > len(current_parts) else current
+    current_initials = sum(
+        1 for p in current_parts[1:-1] if len(re.sub(r"[^A-Za-z]", "", p)) == 1
+    )
+    candidate_initials = sum(
+        1 for p in candidate_parts[1:-1] if len(re.sub(r"[^A-Za-z]", "", p)) == 1
+    )
+    if candidate_initials != current_initials:
+        return candidate if candidate_initials > current_initials else current
+    return candidate if len(candidate) > len(current) else current
+
+
+def _maybe_same_person(current: str, candidate: str) -> bool:
+    current_id = _normalize_person_identity(current)
+    candidate_id = _normalize_person_identity(candidate)
+    if not current_id or not candidate_id:
+        return False
+    if current_id == candidate_id:
+        return True
+    if current_id[1] != candidate_id[1]:
+        return False
+    return SequenceMatcher(a=current_id[0], b=candidate_id[0]).ratio() >= 0.92
+
+
 def build_keyterms(
     *,
     deponent: Optional[str] = None,
@@ -164,6 +207,7 @@ def build_keyterms(
     court_division: Optional[str] = None,
     cause_number: Optional[str] = None,
     include_standard_legal_terms: bool = True,
+    warnings: Optional[list[str]] = None,
 ) -> list[dict]:
     """Build a categorized, de-duplicated Deepgram keyterm list.
 
@@ -178,14 +222,49 @@ def build_keyterms(
 
     terms: list[dict] = []
     seen: set[str] = set()
+    person_index: dict[tuple[str, str], int] = {}
+    warnings = warnings if isinstance(warnings, list) else []
+    warned_pairs: set[tuple[str, str]] = set()
 
     def add(term: Optional[str], category: str, priority: int) -> None:
         if not term:
             return
         term = re.sub(r"\s+", " ", str(term)).strip()
-        if len(term) < 2 or term.lower() in seen:
+        if len(term) < 2:
             return
-        seen.add(term.lower())
+        if category == CATEGORY_PERSON:
+            identity = _normalize_person_identity(term)
+            if identity and identity in person_index:
+                idx = person_index[identity]
+                existing = terms[idx]
+                existing["term"] = _prefer_more_complete_person_name(
+                    existing["term"], term
+                )
+                existing["priority"] = max(existing["priority"], priority)
+                existing["boost"] = float(existing["priority"])
+                return
+        lowered = term.lower()
+        if lowered in seen:
+            return
+        for existing_identity, idx in person_index.items():
+            if category == CATEGORY_PERSON and _maybe_same_person(terms[idx]["term"], term):
+                existing = terms[idx]
+                if _normalize_person_identity(existing["term"]) != _normalize_person_identity(term):
+                    pair = tuple(sorted((existing["term"].lower(), term.lower())))
+                    if pair not in warned_pairs:
+                        warned_pairs.add(pair)
+                        warnings.append(
+                            f"Near-duplicate person names detected in NOD: "
+                            f"'{existing['term']}' vs '{term}'. "
+                            "Kept the better-formed version for keyterms."
+                        )
+                existing["term"] = _prefer_more_complete_person_name(
+                    existing["term"], term
+                )
+                existing["priority"] = max(existing["priority"], priority)
+                existing["boost"] = float(existing["priority"])
+                return
+        seen.add(lowered)
         terms.append({
             "term": term,
             "category": category,
@@ -193,6 +272,10 @@ def build_keyterms(
             "boost": float(priority),
             "source": "nod_parser",
         })
+        if category == CATEGORY_PERSON:
+            identity = _normalize_person_identity(term)
+            if identity:
+                person_index[identity] = len(terms) - 1
 
     # People -- highest value for ASR accuracy.
     add(deponent, CATEGORY_PERSON, PRIORITY_DEPONENT)
@@ -203,8 +286,7 @@ def build_keyterms(
         if kind == "person":
             add(_titlecase(name), CATEGORY_PERSON, PRIORITY_PARTY)
         else:
-            add(_titlecase(name), CATEGORY_ORG, PRIORITY_ORG)
-    add(ordered_by, CATEGORY_PERSON, PRIORITY_LEGAL)
+            add(_titlecase(name), CATEGORY_ORG, PRIORITY_PARTY)
 
     # Law firms.
     for firm in firms:

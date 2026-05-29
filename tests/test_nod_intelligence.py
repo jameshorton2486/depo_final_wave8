@@ -69,8 +69,27 @@ def test_keyterms_are_comprehensive_and_categorized():
     assert by_term["San Antonio"]["category"] == intelligence.CATEGORY_GEOGRAPHIC
     assert by_term["25-cv-00598-OLG"]["category"] == intelligence.CATEGORY_CASE_ID
 
-    # A standard legal phrase is included.
-    assert "oral deposition" in by_term
+    # Core speech-relevant legal phrasing still survives.
+    assert "certified court reporter" in by_term
+
+
+def test_keyterms_include_caption_entity_and_codefendant_as_high_value_terms():
+    terms = _keyterms()
+    by_term = {t["term"]: t for t in terms}
+
+    assert by_term["Home Depot U.S.A., Inc."]["priority"] == intelligence.PRIORITY_PARTY
+    assert by_term["Shawn Herber"]["priority"] == intelligence.PRIORITY_PARTY
+
+
+def test_keyterms_exclude_ordering_clerk_and_procedural_boilerplate():
+    terms = _keyterms()
+    by_term = {t["term"]: t for t in terms}
+
+    assert "Tiffany Netcher" not in by_term
+    assert "oral deposition" not in by_term
+    assert "Texas Rules of Civil Procedure" not in by_term
+    assert "of counsel" not in by_term
+    assert "read and sign" not in by_term
 
 
 def test_keyterms_priority_orders_deponent_first():
@@ -88,6 +107,35 @@ def test_keyterms_deduplicate():
         appearances=[{"name": "Heath Thomas", "firm": None, "side": "plaintiff"}],
     )
     assert sum(1 for t in terms if t["term"] == "Heath Thomas") == 1
+
+
+def test_keyterms_deduplicate_people_by_identity_and_keep_fuller_name():
+    terms = intelligence.build_keyterms(
+        appearances=[
+            {"name": "Justin Hill", "firm": "Hill Law Firm", "side": "plaintiff"},
+            {"name": "Justin A. Hill", "firm": "Hill Law Firm", "side": "plaintiff"},
+        ]
+    )
+    people = [t for t in terms if t["category"] == intelligence.CATEGORY_PERSON]
+
+    assert len(people) == 1
+    assert people[0]["term"] == "Justin A. Hill"
+
+
+def test_keyterms_warn_on_near_duplicate_person_names_and_keep_better_form():
+    warnings = []
+    terms = intelligence.build_keyterms(
+        appearances=[
+            {"name": "Chrstopher Madrid", "firm": "Firm", "side": "defendant"},
+            {"name": "Christopher Madrid", "firm": "Firm", "side": "defendant"},
+        ],
+        warnings=warnings,
+    )
+    people = [t for t in terms if t["category"] == intelligence.CATEGORY_PERSON]
+
+    assert len(people) == 1
+    assert people[0]["term"] == "Christopher Madrid"
+    assert any("Near-duplicate person names detected" in w for w in warnings)
 
 
 def test_keyterm_boost_stays_in_canonical_range():

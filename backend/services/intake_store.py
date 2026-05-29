@@ -129,14 +129,38 @@ def normalize_keyterm_entries(raw_terms: list[Any] | None) -> list[dict]:
             existing["boost"] = entry["boost"]
         if existing.get("category") in ("", "Term") and entry["category"]:
             existing["category"] = entry["category"]
-        if existing.get("source") == "manual" and entry["source"] != "manual":
-            existing["source"] = entry["source"]
+        if entry["source"] == "manual":
+            existing["source"] = "manual"
 
     return [merged[key] for key in order]
 
 
 def keyterm_strings(raw_terms: list[Any] | None) -> list[str]:
     return [entry["term"] for entry in normalize_keyterm_entries(raw_terms)]
+
+
+def reconcile_field_sources(
+    ufm_fields: dict[str, str] | None,
+    raw_sources: dict[str, Any] | None,
+) -> dict[str, str]:
+    """Project field_sources onto the current non-empty UFM field set.
+
+    field_sources is never authoritative on its own: it must be a subset of the
+    current non-empty ufm_fields, and any populated field without an explicit
+    parser/learned source is treated as operator-entered manual data.
+    """
+    fields = filter_ufm_fields(ufm_fields)
+    incoming = raw_sources if isinstance(raw_sources, dict) else {}
+    out: dict[str, str] = {}
+
+    for key, value in fields.items():
+        if not value:
+            continue
+        source = normalize_keyterm_source(incoming.get(key))
+        if key not in incoming:
+            source = "manual"
+        out[key] = source
+    return out
 
 
 def _default_record(case_id: str) -> dict:
@@ -208,6 +232,10 @@ def read_stage1_record(case_id: str) -> dict:
         data.get("field_confirmations")
     )
     record["ufm_fields"] = filter_ufm_fields(data.get("ufm_fields"))
+    record["parser_metadata"]["field_sources"] = reconcile_field_sources(
+        record["ufm_fields"],
+        record["parser_metadata"].get("field_sources"),
+    )
     return record
 
 
@@ -225,6 +253,13 @@ def write_stage1_record(case_id: str, record: dict) -> dict:
         base.get("field_confirmations")
     )
     base["ufm_fields"] = filter_ufm_fields(base.get("ufm_fields"))
+    base["parser_metadata"] = {
+        **base.get("parser_metadata", {}),
+        "field_sources": reconcile_field_sources(
+            base.get("ufm_fields"),
+            (base.get("parser_metadata") or {}).get("field_sources"),
+        ),
+    }
     base["updated_at"] = _utc_now_iso()
 
     path = intake_metadata_path(case_id)
@@ -330,7 +365,9 @@ def sync_stage1_artifacts(payload: dict) -> dict:
         **record.get("parser_metadata", {}),
         **(payload.get("parser_metadata") or {}),
     }
-    keyterms = normalize_keyterm_entries(payload.get("keyterms") or record.get("keyterms"))
+    keyterms = normalize_keyterm_entries(
+        (record.get("keyterms") or []) + (payload.get("keyterms") or [])
+    )
 
     raw_incoming = payload.get("field_confirmations")
     if raw_incoming is None:
@@ -355,6 +392,11 @@ def sync_stage1_artifacts(payload: dict) -> dict:
     incoming_ufm = filter_ufm_fields({k: payload.get(k) for k in UFM_FIELD_IDS})
 
     record["raw_intake_notes"] = payload.get("raw_intake_notes") or ""
+    parser_metadata["field_sources"] = reconcile_field_sources(
+        incoming_ufm,
+        parser_metadata.get("field_sources"),
+    )
+
     record["parser_metadata"] = parser_metadata
     record["keyterms"] = keyterms
     record["field_confirmations"] = merged_confirmations

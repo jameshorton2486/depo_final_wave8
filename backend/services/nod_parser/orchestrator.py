@@ -291,6 +291,7 @@ def parse(source: Union[str, bytes]) -> ParsedNOD:
         court_district=primary.get("court_district"),
         court_division=division,
         cause_number=parsed.ufm_cause,
+        warnings=parsed.warnings,
     )
     parsed.speaker_hints = intelligence.build_speaker_hints(
         deponent=parsed.ufm_witness,

@@ -156,6 +156,90 @@ def test_ufm_preview_includes_sources_confirmations_and_missing_list(client, cre
     assert "ufm_metadata" in body
 
 
+def test_ufm_preview_drops_stale_sources_for_cleared_fields(client, created_case):
+    case_id = created_case["case_id"]
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "ufmCause": "2024-CV-1",
+        "parser_metadata": {
+            "field_sources": {"ufmCause": "nod_parser"},
+        },
+    })
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "parser_metadata": {
+            "field_sources": {"ufmCause": "nod_parser"},
+        },
+    })
+
+    res = client.get(f"/api/intake/cases/{case_id}/ufm-preview")
+    assert res.status_code == 200
+    body = res.json()
+
+    assert "ufmCause" not in body["field_sources"]
+
+
+def test_ufm_preview_marks_manual_fields_with_manual_source(client, created_case):
+    case_id = created_case["case_id"]
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "ufmCause": "2024-CV-1",
+    })
+
+    res = client.get(f"/api/intake/cases/{case_id}/ufm-preview")
+    assert res.status_code == 200
+    body = res.json()
+
+    assert body["field_sources"]["ufmCause"] == "manual"
+
+
+def test_manual_keyterm_survives_reparse_sync(client, created_case):
+    case_id = created_case["case_id"]
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "keyterms": [
+            {"term": "Mario Leal", "boost": 1.0, "category": "Videographer", "source": "manual"},
+        ],
+    })
+
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "keyterms": [
+            {"term": "FEB Transport", "boost": 8.0, "category": "Organization", "source": "nod_parser"},
+        ],
+    })
+
+    read = client.get(f"/api/intake/cases/{case_id}")
+    assert read.status_code == 200
+    terms = {entry["term"]: entry for entry in read.json()["keyterms"]}
+    assert "Mario Leal" in terms
+    assert terms["Mario Leal"]["source"] == "manual"
+    assert "FEB Transport" in terms
+
+
+def test_manual_keyterm_source_wins_on_exact_duplicate_term(client, created_case):
+    case_id = created_case["case_id"]
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "keyterms": [
+            {"term": "Dr. Donald Leifer", "boost": 1.0, "category": "Medical", "source": "manual"},
+        ],
+    })
+
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "keyterms": [
+            {"term": "Dr. Donald Leifer", "boost": 1.5, "category": "Medical", "source": "text_parser"},
+        ],
+    })
+
+    read = client.get(f"/api/intake/cases/{case_id}")
+    assert read.status_code == 200
+    terms = {entry["term"]: entry for entry in read.json()["keyterms"]}
+    assert terms["Dr. Donald Leifer"]["source"] == "manual"
+    assert terms["Dr. Donald Leifer"]["boost"] == 1.5
+
+
 def test_ufm_preview_404_on_unknown_case(client):
     res = client.get("/api/intake/cases/does-not-exist/ufm-preview")
     assert res.status_code == 404
