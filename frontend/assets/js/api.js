@@ -369,6 +369,13 @@
                 source: source || 'stage3_workspace',
             });
         },
+        applyRegexRules(jobId, rules) {
+            // Manual Apply Rule: run regex rules through the backend engine
+            // and persist to the working layer (raw untouched).
+            return _fetch('POST', `/corrections/jobs/${encodeURIComponent(jobId)}/apply-rules`, {
+                rules: rules || [],
+            });
+        },
         listTranscriptProvenance(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/provenance`);
         },
