@@ -146,6 +146,14 @@ Wave 21 moved the project from integration work into MVP validation:
    corrected lines to the working layer via `persist_working_transcript`
    instead of discarding them — so a speaker-mapping confirm actually updates
    the working transcript. RAW untouched; idempotent (UPSERT by utterance_id).
+9. Stage 3 Workspace cleanup (Pass 1, on stage3/workspace-cleanup): the
+   "Apply Rule" button now POSTs to a real backend endpoint
+   (`/api/corrections/jobs/{id}/apply-rules`) that runs the regex engine and
+   persists to the working layer with a `regex_apply_manual` provenance event
+   (replacing the old client-side `String.replace`). Removed three
+   counterproductive surfaces — the no-op AI Review stub + temperature slider,
+   and the §5A-violating "Strip Acoustic Fillers" button — and defaulted the
+   strict-line-lock page divider off.
 
 The next work should come from `docs/audits/REAL_WORLD_VALIDATION_LOG.md`,
 not from assumptions that Waves 19–20 are still unwired.
