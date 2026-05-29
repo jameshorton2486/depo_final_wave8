@@ -154,6 +154,14 @@ Wave 21 moved the project from integration work into MVP validation:
    counterproductive surfaces — the no-op AI Review stub + temperature slider,
    and the §5A-violating "Strip Acoustic Fillers" button — and defaulted the
    strict-line-lock page divider off.
+10. Stage 3 Workspace AI + visibility (Pass 2, on stage3/workspace-ai-visibility):
+    consolidated "Run AI Review" button (all three generators via `/analyze`,
+    one `ai_review_run` provenance event); deleted the redundant AI Analyze
+    button; engine-status badge + correction-log viewer fed by an append-only
+    `correction_log.jsonl` sidecar (written by both the engine auto-run and the
+    manual Apply Rule path) and a `GET /engine-status` reading the
+    `correction_engine_auto_run` / `regex_apply_manual` provenance events.
+    Add-to-memory deferred (no persistence path; revisit with the lexicon decision).
 
 The next work should come from `docs/audits/REAL_WORLD_VALIDATION_LOG.md`,
 not from assumptions that Waves 19–20 are still unwired.

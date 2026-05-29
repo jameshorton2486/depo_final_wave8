@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, status
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from backend.corrections import correction_log_store
 from backend.corrections.regex_rules import (
     RegexRule, apply_regex_rules, apply_regex_rules_to_text,
 )
@@ -164,6 +165,20 @@ def apply_rules_now(job_id: str, payload: ApplyRulesRequest) -> dict:
     if overrides:
         working_state_mod.persist_working_transcript(
             job_id, overrides, source="regex_apply_manual")
+
+    # Correction-log sidecar: one entry per changed utterance (before -> after),
+    # so the Stage 3 correction-log viewer shows manual regex edits alongside
+    # the engine's auto-run.
+    reason = "; ".join(f"{m.find_pattern} -> {m.replace_with}" for m in payload.rules)
+    rule_id = rules[0].rule_id if rules else "regex"
+    log_entries = [
+        {"rule_id": rule_id, "before": orig.get(u.get("utterance_id"), ""),
+         "after": u.get("text") or "", "reason": reason, "stage": "regex"}
+        for u in new_utterances
+        if u.get("utterance_id")
+        and (u.get("text") or "") != orig.get(u.get("utterance_id"))
+    ]
+    correction_log_store.append_run(job_id, log_entries, source="manual_regex")
 
     substitutions = sum(getattr(s, "match_count", 0) for s in subs)
     event = provenance_mod.record_event(

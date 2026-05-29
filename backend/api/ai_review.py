@@ -146,10 +146,21 @@ def analyze_job(job_id: str, kinds: str | None = None) -> dict:
     if all_suggestions:
         review_queue.save_suggestions(all_suggestions)
     logger.info(f"AI analyze {job_id}: {counts}")
+    event = provenance_mod.record_event(
+        job_id,
+        event_type="ai_review_run",
+        title="AI review run",
+        detail=(f"{len(all_suggestions)} suggestion(s): "
+                + ", ".join(f"{k} {v}" for k, v in counts.items())),
+        actor_type="ai",
+        source="workspace",
+        metadata={"by_kind": counts, "generated": len(all_suggestions)},
+    )
     return {
         "available": True,
         "generated": len(all_suggestions),
         "by_kind": counts,
+        "provenance_event_id": event["event_id"],
     }
 
 

@@ -29,6 +29,7 @@
                     { find_pattern: findVal, replace_with: replaceVal },
                 ]);
                 await reloadWorkspaceTranscript();
+                if (typeof loadEngineStatusBadge === "function") loadEngineStatusBadge();
                 const n = result.substitutions || 0;
                 showToast(
                     n > 0
@@ -40,7 +41,89 @@
             }
         }
 
-        // Trigger dynamic extraction of Deepgram suggestions (Stage 3)
+        // --- Engine-status badge + correction-log viewer ----------------
+        let _correctionLogEntries = [];
+
+        function _relativeTime(iso) {
+            if (!iso) return "";
+            const norm = (iso.endsWith('Z') || iso.includes('+')) ? iso : iso + 'Z';
+            const secs = Math.max(0, Math.floor((Date.now() - new Date(norm).getTime()) / 1000));
+            if (secs < 60) return `${secs}s ago`;
+            const mins = Math.floor(secs / 60);
+            if (mins < 60) return `${mins}m ago`;
+            const hrs = Math.floor(mins / 60);
+            if (hrs < 24) return `${hrs}h ago`;
+            return `${Math.floor(hrs / 24)}d ago`;
+        }
+
+        async function loadEngineStatusBadge() {
+            const badge = document.getElementById('engineStatusBadge');
+            if (!badge) return;
+            const jobId = (state.activeTranscriptJobIds || [])[0];
+            if (!jobId || !window.api || typeof window.api.getEngineStatus !== "function") {
+                badge.innerText = "Engine: never run";
+                return;
+            }
+            try {
+                const s = await window.api.getEngineStatus(jobId);
+                if (!s.last_run_at) {
+                    badge.innerText = "Engine: never run";
+                } else {
+                    const src = s.last_run_source === 'manual_regex' ? 'manual' : 'auto';
+                    const n = (s.last_run_substitutions == null) ? '?' : s.last_run_substitutions;
+                    badge.innerText = `Engine: ${_relativeTime(s.last_run_at)} (${src}) — ${n} correction(s)`;
+                }
+            } catch (err) {
+                badge.innerText = "Engine: status unavailable";
+            }
+        }
+
+        async function openCorrectionLog() {
+            const panel = document.getElementById('correctionLogPanel');
+            if (!panel) return;
+            const jobId = (state.activeTranscriptJobIds || [])[0];
+            _correctionLogEntries = [];
+            if (jobId && window.api && typeof window.api.getCorrectionLog === "function") {
+                try {
+                    const res = await window.api.getCorrectionLog(jobId);
+                    _correctionLogEntries = res.entries || [];
+                } catch (err) {
+                    _correctionLogEntries = [];
+                }
+            }
+            panel.classList.remove('hidden');
+            renderCorrectionLogEntries();
+        }
+
+        function closeCorrectionLog() {
+            const panel = document.getElementById('correctionLogPanel');
+            if (panel) panel.classList.add('hidden');
+        }
+
+        function renderCorrectionLogEntries() {
+            const list = document.getElementById('correctionLogList');
+            if (!list) return;
+            const stageF = (document.getElementById('correctionLogStageFilter') || {}).value || "";
+            const q = ((document.getElementById('correctionLogSearch') || {}).value || "").toLowerCase();
+            const esc = (typeof _speakerMapEsc === "function") ? _speakerMapEsc : (x => x);
+            const rows = _correctionLogEntries.filter(e => {
+                if (stageF && e.stage !== stageF) return false;
+                if (q && !((e.before || '').toLowerCase().includes(q) || (e.after || '').toLowerCase().includes(q))) return false;
+                return true;
+            });
+            if (rows.length === 0) {
+                list.innerHTML = `<p class="text-slate-600 italic">No corrections in the most recent engine run.</p>`;
+                return;
+            }
+            list.innerHTML = rows.map(e => `
+                <div class="border border-slate-800 rounded p-2">
+                    <div class="text-[9px] uppercase tracking-wider text-slate-500 mb-1">${esc(e.stage || '')} &middot; ${esc(e.source || '')}${e.rule_id ? ' &middot; ' + esc(e.rule_id) : ''}</div>
+                    <div class="text-red-300/80 line-through">${esc(e.before || '')}</div>
+                    <div class="text-emerald-300">${esc(e.after || '')}</div>
+                    ${e.reason ? `<div class="text-[10px] text-slate-500 mt-1">${esc(e.reason)}</div>` : ''}
+                </div>`).join('');
+        }
+
         function _workspaceSaveState() {
             if (!state.workspaceSave) {
                 state.workspaceSave = {
@@ -1501,6 +1584,9 @@
                 if (typeof loadTranscriptProvenance === 'function' && jobIds[0]) {
                     await loadTranscriptProvenance(jobIds[0]);
                 }
+                // The mapping confirm triggers the correction engine -- refresh
+                // the engine-status badge to reflect the run.
+                if (typeof loadEngineStatusBadge === "function") loadEngineStatusBadge();
                 showToast("Speaker mapping saved to Stage 3 workspace.", "emerald");
             } catch (err) {
                 console.error('Workspace speaker mapping save failed:', err);
@@ -1780,6 +1866,10 @@ window.copyTranscriptToClipboard = copyTranscriptToClipboard;
 window.manualSaveWorkspaceTranscript = manualSaveWorkspaceTranscript;
 window.reloadWorkspaceTranscript = reloadWorkspaceTranscript;
 window.loadWorkspaceSpeakerMapping = loadWorkspaceSpeakerMapping;
+window.loadEngineStatusBadge = loadEngineStatusBadge;
+window.openCorrectionLog = openCorrectionLog;
+window.closeCorrectionLog = closeCorrectionLog;
+window.renderCorrectionLogEntries = renderCorrectionLogEntries;
 window.saveWorkspaceSpeakerMapping = saveWorkspaceSpeakerMapping;
 window._normalizeHonorificSpacing = _normalizeHonorificSpacing;
 window._parseNameAndHonorific = _parseNameAndHonorific;
@@ -1800,7 +1890,7 @@ window.persistWorkspaceTranscript = persistWorkspaceTranscript;
 async function refreshAIReviewStatus() {
     const el = document.getElementById('aiReviewStatus');
     const btn = document.getElementById('aiSpeakerMapBtn');
-    const analyzeBtn = document.getElementById('aiAnalyzeBtn');
+    const analyzeBtn = document.getElementById('runAIReviewBtn');
     if (!el) return;
     try {
         const status = await window.api.getAIReviewStatus();
@@ -1821,31 +1911,35 @@ async function refreshAIReviewStatus() {
     }
 }
 
-async function requestAIAnalysis() {
+// Consolidated AI review: runs all three generators (boundaries, garbles,
+// flags) in one click via /analyze with no `kinds`. The backend records the
+// single ai_review_run provenance event; suggestions enter the review queue
+// and are never auto-applied.
+async function runAIReview() {
     const sp = (typeof _workspaceJob === "function") ? _workspaceJob() : null;
     const jobId = sp && sp.jobId;
     if (!jobId) {
-        showToast("Load a transcript job before requesting AI analysis.", "amber");
+        showToast("Load a transcript job before running AI review.", "amber");
         return;
     }
-    const btn = document.getElementById('aiAnalyzeBtn');
-    if (btn) { btn.disabled = true; btn.innerText = "Analyzing… (this can take a moment)"; }
+    const btn = document.getElementById('runAIReviewBtn');
+    if (btn) { btn.disabled = true; btn.dataset.label = btn.innerText; btn.innerText = "Running…"; }
     try {
-        const res = await window.api.analyzeAIJob(jobId);
+        const res = await window.api.analyzeAIJob(jobId);  // no kinds -> all three
         if (!res.available) {
-            showToast("AI review layer is inert — no API key configured.", "amber");
+            showToast("AI review is inert — no API key configured.", "amber");
         } else {
-            showToast(`AI analysis complete — ${res.generated} suggestion(s) queued.`, "emerald");
-            addProvenanceRecord("AI Review", `Ran AI analysis: ${res.generated} suggestion(s) generated.`, "ai");
+            const bk = res.by_kind || {};
+            showToast(
+                `AI review complete: ${bk.boundaries || 0} boundary, `
+                + `${bk.garbles || 0} garble, ${bk.flags || 0} flag.`,
+                "emerald");
         }
         await loadAISuggestions(jobId);
     } catch (err) {
-        showToast(`AI analysis failed: ${err.message}`, "red");
+        showToast(`AI review failed: ${err.message || err}`, "red");
     } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerText = "✨ Analyze transcript (boundaries · garbles · flags)";
-        }
+        if (btn) { btn.disabled = false; btn.innerText = btn.dataset.label || "✨ Run AI Review"; }
     }
 }
 
@@ -2021,7 +2115,7 @@ async function rejectAISuggestion(suggestionId) {
 
 window.refreshAIReviewStatus = refreshAIReviewStatus;
 window.requestAISpeakerMap = requestAISpeakerMap;
-window.requestAIAnalysis = requestAIAnalysis;
+window.runAIReview = runAIReview;
 window.loadAISuggestions = loadAISuggestions;
 window.approveAISuggestion = approveAISuggestion;
 window.applyApprovedAISuggestion = applyApprovedAISuggestion;

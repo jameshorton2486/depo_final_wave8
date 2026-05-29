@@ -1218,6 +1218,57 @@ def get_export_preview(job_id: str) -> dict:
     return doc.to_dict()
 
 
+@router.get("/jobs/{job_id}/engine-status")
+def get_engine_status(job_id: str) -> dict:
+    """Last correction-engine run for a job (auto or manual regex).
+
+    Drives the Stage 3 engine-status badge. Reads the most recent
+    `correction_engine_auto_run` / `regex_apply_manual` provenance event;
+    returns nulls when the engine has never run for this job.
+    """
+    if trepo.get_job(job_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+    events = provenance_mod.list_events(job_id, limit=200)
+    for ev in events:  # list_events is newest-first
+        et = ev.get("event_type")
+        if et in ("correction_engine_auto_run", "regex_apply_manual"):
+            meta = ev.get("metadata") or {}
+            subs = meta.get("substitution_count")
+            if subs is None:
+                subs = meta.get("substitutions")
+            return {
+                "last_run_at": ev.get("created_at"),
+                "last_run_substitutions": subs,
+                "last_run_event_id": ev.get("event_id"),
+                "last_run_source": "manual_regex" if et == "regex_apply_manual" else "auto",
+            }
+    return {
+        "last_run_at": None,
+        "last_run_substitutions": None,
+        "last_run_event_id": None,
+        "last_run_source": None,
+    }
+
+
+@router.get("/jobs/{job_id}/correction-log")
+def get_correction_log(job_id: str) -> dict:
+    """Entries from the most recent correction run (auto or manual regex).
+
+    Reads the per-job correction-log JSONL sidecar. Drives the Stage 3
+    correction-log viewer. Empty list when no run has produced corrections.
+    """
+    if trepo.get_job(job_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transcript job {job_id} not found",
+        )
+    from backend.corrections import correction_log_store
+    return {"entries": correction_log_store.read_latest_run(job_id)}
+
+
 class ExportRequest(BaseModel):
     fmt: str = "txt"
     destination: str = "downloads"  # downloads | case_folder | path
