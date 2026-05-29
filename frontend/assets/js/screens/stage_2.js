@@ -525,7 +525,7 @@ function renderServerTranscriptJobs() {
 
     const groups = [];
     if (currentCaseJobs.length > 0) groups.push({ title: "Current Case", jobs: currentCaseJobs, tone: "text-emerald-400" });
-    if (unboundJobs.length > 0) groups.push({ title: "Unbound Jobs", jobs: unboundJobs, tone: "text-amber-400" });
+    if (unboundJobs.length > 0) groups.push({ title: "Detached transcripts", subtitle: "The case or session was deleted; the transcript was preserved.", jobs: unboundJobs, tone: "text-amber-400" });
     if (otherJobs.length > 0) groups.push({ title: "Other Cases", jobs: otherJobs, tone: "text-slate-400" });
     if (groups.length === 0) groups.push({ title: "All Jobs", jobs, tone: "text-slate-400" });
 
@@ -533,18 +533,22 @@ function renderServerTranscriptJobs() {
         const header = document.createElement('div');
         header.className = "pt-3 first:pt-0";
         header.innerHTML = `
-            <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center justify-between mb-1">
                 <p class="text-[10px] uppercase tracking-[0.18em] font-bold ${group.tone}">${group.title}</p>
                 <span class="text-[10px] text-slate-500 font-mono">${group.jobs.length}</span>
             </div>
+            ${group.subtitle ? `<p class="text-[9px] text-slate-500 italic mb-2">${group.subtitle}</p>` : ''}
         `;
         list.appendChild(header);
 
         group.jobs.forEach(job => {
         const statusStyles = {
+            queued: "text-slate-400 bg-slate-900 border-slate-800",
+            preprocessing: "text-sky-400 bg-sky-500/10 border-sky-500/20",
+            transcribing: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
+            assembling: "text-violet-400 bg-violet-500/10 border-violet-500/20",
             completed: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
             failed: "text-red-400 bg-red-500/10 border-red-500/20",
-            queued: "text-slate-400 bg-slate-900 border-slate-800",
         };
         const style = statusStyles[job.status] || "text-indigo-400 bg-indigo-500/10 border-indigo-500/20";
         const done = job.status === "completed";
@@ -563,7 +567,7 @@ function renderServerTranscriptJobs() {
                         ${job.word_count} words · ${job.speaker_count} speakers · ${dur} · conf ${conf}
                     </p>
                     <p class="text-[10px] ${job.case_bound ? 'text-emerald-500' : 'text-amber-400'} font-semibold uppercase tracking-wide mt-1">
-                        ${job.case_bound ? `Bound to case ${job.case_id}` : 'Unbound transcript job'}
+                        ${job.case_bound ? `Bound to case ${job.case_id}` : 'Detached — case/session removed'}
                     </p>
                     ${isOffline ? `<p class="text-[10px] text-amber-400 font-semibold uppercase tracking-wide mt-1">Offline validation transcript — not certifiable</p>` : ''}
                 </div>
@@ -582,7 +586,7 @@ function renderServerTranscriptJobs() {
                 ${showBind ? `
                 <button onclick="bindTranscriptJobToCurrentCase('${job.job_id}')"
                     class="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[10px] font-semibold transition-all">
-                    Bind to Current Case
+                    Reattach to Current Case
                 </button>` : ''}
                 <button onclick="deleteServerTranscriptJob('${job.job_id}')"
                     class="px-2 py-1 text-slate-500 hover:text-red-400 text-[10px] font-semibold transition-all">
@@ -639,11 +643,45 @@ async function viewTranscriptJob(jobId) {
 
 async function deleteServerTranscriptJob(jobId) {
     if (!window.api) return;
+    const ok = window.confirm(
+        "Delete this transcript job?\n\n" +
+        "This permanently removes:\n" +
+        "  • The audio file\n" +
+        "  • The immutable RAW packet and integrity sidecar\n" +
+        "  • The working transcript and all overrides\n" +
+        "  • Snapshots, provenance events, and exhibits\n\n" +
+        "This cannot be undone."
+    );
+    if (!ok) return;
     try {
         await window.api.deleteTranscriptJob(jobId);
         showToast("Transcript job deleted.", "emerald");
         await refreshServerTranscriptJobs();
     } catch (err) {
+        // 409 = a guard blocked it (certified packages, or tampered RAW).
+        // Offer an explicit force override only on a deliberate second confirm.
+        if (err.status === 409) {
+            const n = (err.payload && err.payload.package_ids || []).length;
+            const detail = (err.payload && err.payload.detail) || err.message;
+            const forceOk = window.confirm(
+                `${detail}\n\n` +
+                (n ? `This job has ${n} certified package(s). ` : "") +
+                "Force-delete anyway? The deletion will be recorded in the audit log, " +
+                "but the certified record will lose its lineage. This cannot be undone."
+            );
+            if (!forceOk) {
+                showToast("Delete cancelled — job preserved.", "amber");
+                return;
+            }
+            try {
+                await window.api.deleteTranscriptJob(jobId, true);
+                showToast("Transcript job force-deleted (recorded in audit log).", "emerald");
+                await refreshServerTranscriptJobs();
+            } catch (err2) {
+                showToast(`Force-delete failed: ${err2.message}`, "red");
+            }
+            return;
+        }
         showToast(`Delete failed: ${err.message}`, "red");
     }
 }
