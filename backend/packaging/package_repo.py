@@ -193,6 +193,30 @@ def has_certified_package(job_id: str) -> bool:
     return row is not None
 
 
+# Any state past DRAFT carries real downstream weight (an EXPORTED package
+# has been served, a SEALED one finalized), so deletion protection uses the
+# full non-DRAFT set, not just CERTIFIED.
+_NON_DRAFT_STATES = ("CERTIFIED", "EXPORTED", "SEALED", "AMENDED", "SUPERSEDED")
+
+
+def list_non_draft_package_ids(job_id: str) -> list[str]:
+    """Package IDs for `job_id` in any non-DRAFT state (newest first)."""
+    placeholders = ", ".join("?" for _ in _NON_DRAFT_STATES)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT package_id FROM transcript_packages "
+            f"WHERE job_id = ? AND package_state IN ({placeholders}) "
+            f"ORDER BY created_at DESC, package_id DESC",
+            (job_id, *_NON_DRAFT_STATES),
+        ).fetchall()
+    return [r["package_id"] for r in rows]
+
+
+def has_non_draft_package(job_id: str) -> bool:
+    """True when `job_id` has any package past DRAFT (the deletion guard)."""
+    return bool(list_non_draft_package_ids(job_id))
+
+
 def update_package_state(
     package_id: str,
     new_state: str,
