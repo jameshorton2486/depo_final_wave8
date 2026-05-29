@@ -109,6 +109,34 @@ def run_correction_engine_for_job(
             f"Correction engine ran but persistence failed for {job_id}: {exc}"
         )
 
+    # Visibility: record a provenance event for the run and append the
+    # per-utterance corrections to the correction-log sidecar so the Stage 3
+    # engine-status badge and correction-log viewer have a source. Defensive
+    # -- a logging failure never breaks the engine run.
+    try:
+        from backend.corrections import correction_log_store
+        from backend.transcript import provenance as provenance_mod
+
+        log_entries = [
+            {"rule_id": e.rule_id, "before": e.before, "after": e.after,
+             "reason": "", "stage": e.stage}
+            for e in result.log
+        ]
+        correction_log_store.append_run(job_id, log_entries, source="auto")
+        provenance_mod.record_event(
+            job_id,
+            event_type="correction_engine_auto_run",
+            title="Correction engine auto-run",
+            detail=f"{len(result.log)} correction(s); {persisted_count} utterance(s) persisted.",
+            source="workspace",
+            metadata={
+                "substitution_count": len(result.log),
+                "persisted_count": persisted_count,
+            },
+        )
+    except Exception as exc:
+        logger.warning(f"Engine-run provenance/log failed for {job_id}: {exc}")
+
     summary = {
         "job_id": job_id,
         "line_count": len(result.lines),
