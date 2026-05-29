@@ -26,6 +26,7 @@
 ## Active Subsystem Specs
 
 - `docs/nod_parser_spec.md`
+- `docs/DEPO-PRO_UFM_Data_Dictionary_v2.md`
 - `docs/wave19_ufm_layout.md`
 - `docs/wave20_packaging.md`
 
@@ -37,6 +38,7 @@ as status reporting rather than behavior authority.
 
 - `development_workflow.md`
 - `docs/development_workflow.md`
+- `docs/DEPO-PRO_Field_Template_Matrix.md`
 - `docs/architecture/transcript_engine/README.md`
 - `docs/examples/README.md`
 
