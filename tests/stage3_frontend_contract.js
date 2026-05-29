@@ -391,17 +391,17 @@ async function testTranscriptNavigationRelabelsRender() {
   context.setWorkspaceMode('edit');
   assert.strictEqual(
     context.document.getElementById('rightPanelTitle').innerText,
-    'Transcript Navigation Preview',
+    'Audio Playback Review',
   );
 
   context.setWorkspaceMode('audio');
   assert.strictEqual(
     context.document.getElementById('rightPanelTitle').innerText,
-    'Transcript Navigation Preview',
+    'Audio Playback Review',
   );
   assert.strictEqual(
     context.document.getElementById('modeBannerText').innerText,
-    'Transcript Navigation Preview: click a line to seek retained media and follow playback in real time.',
+    'Audio Playback Review: retained job media drives playback and transcript highlighting in real time.',
   );
 }
 
@@ -549,9 +549,11 @@ async function testMissingAudioShowsExplicitUnavailableState() {
   await testMissingAudioShowsExplicitUnavailableState();
   const stage3Html = fs.readFileSync(path.join(process.cwd(), 'frontend', 'screens', 'stage_3_workspace.html'), 'utf8');
   assert.ok(stage3Html.includes('audioPlaybackNote'));
+  assert.ok(stage3Html.includes('Audio Playback Review'));
   const stage3Js = fs.readFileSync(path.join(process.cwd(), 'frontend', 'assets', 'js', 'screens', 'stage_3.js'), 'utf8');
   assert.ok(!stage3Js.includes('playbackLineIdx'));
   assert.ok(!stage3Js.includes('playbackInterval'));
+  assert.ok(!stage3Js.includes('Transcript Navigation Preview: click a line to seek retained media and follow playback in real time.'));
   console.log('stage_3 frontend contract checks passed');
 })().catch((err) => {
   console.error(err);

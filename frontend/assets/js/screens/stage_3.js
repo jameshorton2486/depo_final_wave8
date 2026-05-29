@@ -1055,7 +1055,7 @@
                 document.getElementById('modeBtnEdit').className = "px-3 py-1.5 text-xs font-medium rounded-lg transition-all border border-slate-700 bg-slate-800 text-white shadow-sm";
                 bannerText.innerText = "Free Edit Mode: Click any line and type to edit text directly. Left rail tags are preserved automatically.";
                 document.getElementById('toolSectionAudio').classList.remove('hidden');
-                document.getElementById('rightPanelTitle').innerText = "Transcript Navigation Preview";
+                document.getElementById('rightPanelTitle').innerText = "Audio Playback Review";
             } else if (mode === 'suggestions') {
                 document.getElementById('modeBtnSuggestions').className = "px-3 py-1.5 text-xs font-medium rounded-lg transition-all border border-slate-700 bg-slate-800 text-white shadow-sm";
                 bannerText.innerText = "Suggestion Sweep Mode: Interactive list of low confidence alignments. Review and remember spelling lists.";
@@ -1064,9 +1064,9 @@
                 triggerSuggestionBox(state.focusedLineId);
             } else if (mode === 'audio') {
                 document.getElementById('modeBtnAudio').className = "px-3 py-1.5 text-xs font-medium rounded-lg transition-all border border-slate-700 bg-slate-800 text-white shadow-sm";
-                bannerText.innerText = "Transcript Navigation Preview: click a line to seek retained media and follow playback in real time.";
+                bannerText.innerText = "Audio Playback Review: retained job media drives playback and transcript highlighting in real time.";
                 document.getElementById('toolSectionAudio').classList.remove('hidden');
-                document.getElementById('rightPanelTitle').innerText = "Transcript Navigation Preview";
+                document.getElementById('rightPanelTitle').innerText = "Audio Playback Review";
             } else if (mode === 'formatting') {
                 document.getElementById('modeBtnFormatting').className = "px-3 py-1.5 text-xs font-medium rounded-lg transition-all border border-slate-700 bg-slate-800 text-white shadow-sm";
                 bannerText.innerText = "UFM Layout Mode: Recalculate strict margins, margins indicators, page counts and format types (Q & A parameters).";

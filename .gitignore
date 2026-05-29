@@ -115,6 +115,12 @@ deepgram_no_utterances.txt
 deepgram_utterances.txt
 collect_prompt_files.py
 prompt_files/
+Build-Transcript-Audit-Bundle.ps1
+collect_prompt_files.ps1
+depo_pack_stage2.ps1
+zip_prompt_files.ps1
+img.png
+UsersjamesAppDataLocalTempdepo_pytest/
 
 # =========================
 # Testing / Pytest
