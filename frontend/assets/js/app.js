@@ -535,6 +535,7 @@
                     renderWorkspaceSaveStatus && renderWorkspaceSaveStatus();
                     updateStatsBar && updateStatsBar();
                     loadWorkspaceSpeakerMapping && loadWorkspaceSpeakerMapping();
+                    loadEngineStatusBadge && loadEngineStatusBadge();
                     loadWorkspaceSnapshots && loadWorkspaceSnapshots();
                 } else if (stageNum === 4) {
                     renderExhibitsIndex && renderExhibitsIndex();

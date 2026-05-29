@@ -34,7 +34,15 @@
                                 </button>
                             </div>
 
-                            <!-- Consolidated "Run AI Review" button lands here in Pass 2. -->
+                            <!-- Engine-status badge + consolidated AI review -->
+                            <div class="space-y-2">
+                                <button id="engineStatusBadge" onclick="openCorrectionLog()" title="View the most recent correction run" class="w-full text-left text-[10px] font-mono text-slate-500 hover:text-slate-300 bg-slate-950 border border-slate-800 rounded px-2 py-1.5 transition-all">
+                                    Engine: never run
+                                </button>
+                                <button id="runAIReviewBtn" onclick="runAIReview()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold rounded transition-all">
+                                    ✨ Run AI Review
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Authoritative speaker mapping now lives here in
@@ -69,10 +77,6 @@
                             <button id="aiSpeakerMapBtn" onclick="requestAISpeakerMap()"
                                 class="w-full text-[10px] font-semibold text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/60 rounded-lg py-1.5 transition-all mb-2">
                                 ✨ Suggest speaker map
-                            </button>
-                            <button id="aiAnalyzeBtn" onclick="requestAIAnalysis()"
-                                class="w-full text-[10px] font-semibold text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/60 rounded-lg py-1.5 transition-all mb-2">
-                                ✨ Analyze transcript (boundaries · garbles · flags)
                             </button>
                             <div class="space-y-1.5" id="aiSuggestionsList">
                                 <p class="text-[10px] text-slate-600 italic">No AI suggestions yet.</p>
@@ -336,6 +340,31 @@
                     </button>
                 </div>
             </aside>
+        </div>
+
+        <!-- Correction log viewer (opened from the engine-status badge) -->
+        <div id="correctionLogPanel" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-6">
+            <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col shadow-2xl">
+                <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
+                    <span class="text-sm font-bold text-white">Correction Log — most recent run</span>
+                    <button onclick="closeCorrectionLog()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+                </div>
+                <div class="flex items-center gap-2 px-5 py-2 border-b border-slate-800">
+                    <select id="correctionLogStageFilter" onchange="renderCorrectionLogEntries()" class="bg-slate-950 border border-slate-700 rounded text-[11px] text-slate-200 px-2 py-1">
+                        <option value="">All stages</option>
+                        <option value="regex">regex</option>
+                        <option value="A">A (artifacts)</option>
+                        <option value="M">M (metadata)</option>
+                        <option value="X">X (lexicon)</option>
+                        <option value="T">T (typography)</option>
+                        <option value="F">F (flags)</option>
+                    </select>
+                    <input id="correctionLogSearch" oninput="renderCorrectionLogEntries()" type="text" placeholder="Search before/after…" class="flex-1 bg-slate-950 border border-slate-700 rounded text-[11px] text-slate-200 px-2 py-1 placeholder:text-slate-600">
+                </div>
+                <div id="correctionLogList" class="flex-1 overflow-y-auto px-5 py-3 space-y-2 font-mono text-[11px]">
+                    <p class="text-slate-600 italic">No corrections in the most recent engine run.</p>
+                </div>
+            </div>
         </div>
 
         <!-- STAGE 4: INSERTION PAGES (Exhibits, Indices, Citations) -->

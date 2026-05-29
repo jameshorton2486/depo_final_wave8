@@ -376,6 +376,12 @@
                 rules: rules || [],
             });
         },
+        getEngineStatus(jobId) {
+            return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/engine-status`);
+        },
+        getCorrectionLog(jobId) {
+            return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/correction-log`);
+        },
         listTranscriptProvenance(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/provenance`);
         },
