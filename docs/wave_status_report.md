@@ -141,6 +141,11 @@ Wave 21 moved the project from integration work into MVP validation:
    `presets.classify_audio` picks one of four Deepgram presets
    (studio/courtroom/zoom_mixed/phone), tuning only the settings used to
    produce the immutable RAW. `filler_words=true` preserved on every path.
+8. Stage 3 Pipeline A persistence fix (Phase 0, on stage3/correction-persistence):
+   `correction_trigger.run_correction_engine_for_job` now writes the engine's
+   corrected lines to the working layer via `persist_working_transcript`
+   instead of discarding them — so a speaker-mapping confirm actually updates
+   the working transcript. RAW untouched; idempotent (UPSERT by utterance_id).
 
 The next work should come from `docs/audits/REAL_WORLD_VALIDATION_LOG.md`,
 not from assumptions that Waves 19–20 are still unwired.
