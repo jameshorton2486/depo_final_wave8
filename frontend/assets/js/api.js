@@ -447,8 +447,9 @@
         getTranscriptWorkingPacket(jobId) {
             return _fetch('GET', `/transcripts/jobs/${encodeURIComponent(jobId)}/packet`);
         },
-        deleteTranscriptJob(jobId) {
-            return _fetch('DELETE', `/transcripts/jobs/${encodeURIComponent(jobId)}`);
+        deleteTranscriptJob(jobId, force = false) {
+            const q = force ? '?force=true' : '';
+            return _fetch('DELETE', `/transcripts/jobs/${encodeURIComponent(jobId)}${q}`);
         },
         readbackSearch(query, caseId) {
             const body = { query };

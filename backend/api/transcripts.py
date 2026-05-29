@@ -34,7 +34,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -64,6 +64,8 @@ from backend.models.transcripts import (
     WorkingTranscriptSaveResponse,
 )
 from backend.services import correction_trigger, intake_store, speaker_mapping
+from backend.packaging import package_repo
+from backend.transcript import deletion_log
 from backend.transcript import export_render as export_render_mod
 from backend.transcript import ingest
 from backend.transcript import integrity as integrity_mod
@@ -874,8 +876,16 @@ def _read_packet_or_404(job_id: str, layer: str) -> dict:
 
 
 @router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_job(job_id: str) -> None:
-    """Delete a job, its DB content, and its on-disk artifacts."""
+def delete_job(job_id: str, force: bool = Query(False)):
+    """Delete a job, its DB content, and its on-disk artifacts.
+
+    Lifecycle guards (both bypassable only with ?force=true): refuse to
+    delete a job whose RAW integrity check fails, or that has any non-DRAFT
+    (certified/exported/sealed/...) package -- deleting the latter would
+    orphan a certified record from its lineage. A durable deletion record is
+    written to the JSONL sidecar BEFORE the destructive sequence, because the
+    provenance events CASCADE away with the job and cannot hold the trail.
+    """
     row = trepo.get_job(job_id)
     if row is None:
         raise HTTPException(
@@ -883,7 +893,30 @@ def delete_job(job_id: str) -> None:
             detail=f"Transcript job {job_id} not found",
         )
 
-    # Best-effort cleanup of on-disk artifacts.
+    # RAW integrity gate (the existing helper raises 409 on tamper).
+    if not force:
+        _assert_raw_integrity_or_409(row)
+
+    # Certified-record gate: never silently orphan a non-DRAFT package.
+    package_ids = package_repo.list_non_draft_package_ids(job_id)
+    if package_ids and not force:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": (
+                    f"Refusing to delete job {job_id}: it has "
+                    f"{len(package_ids)} certified package(s). "
+                    "Pass ?force=true to override."
+                ),
+                "package_ids": package_ids,
+            },
+        )
+
+    # Durable audit record BEFORE anything is destroyed (survives the cascade
+    # and a crash mid-delete).
+    deletion_log.append_deletion_event(row, force=force, package_ids=package_ids)
+
+    # Destructive sequence: on-disk artifacts then the cascading DB delete.
     for path_value in (row.get("audio_path"), row.get("raw_packet_path")):
         if path_value:
             try:
@@ -897,6 +930,7 @@ def delete_job(job_id: str) -> None:
         shutil.rmtree(transcripts_dir, ignore_errors=True)
 
     trepo.delete_job(job_id)
+    return None
 
 
 # ====================================================================

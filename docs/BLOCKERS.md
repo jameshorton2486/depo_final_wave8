@@ -39,6 +39,17 @@ implementation blockers unless explicitly reopened.
   exactly that and is correctly rejected — it mutates the immutable raw layer.
   Scope together with the per-utterance speaker re-attribution work (same
   raw-diarization-granularity root cause).
+- **Court-reporter colloquy double-colon defect (`THE REPORTER::`)** — a
+  court-reporter colloquy line renders a duplicate, double-colon speaker
+  header in the export: a bare `THE REPORTER::` line followed by the indented
+  colloquy. **Re-confirmed live on `main` 2026-05-29** — it reproduces with
+  ANY reporter colloquy line (oath or not), so it is independent of the
+  (removed) witness-sworn work; it is a defect in the colloquy speaker-header
+  rendering (`backend/stage_s/` / `backend/transcript/export_render.py`),
+  surfaced originally by the dedup test's oath cases. Fix belongs in the
+  colloquy header logic, in its own pass. (Note briefly lived on the deleted
+  `stage3/witness-sworn` branch; re-recorded here after verifying it still
+  reproduces.)
 
 ## Recorded Architectural Invariants
 

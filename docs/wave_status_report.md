@@ -162,6 +162,14 @@ Wave 21 moved the project from integration work into MVP validation:
     manual Apply Rule path) and a `GET /engine-status` reading the
     `correction_engine_auto_run` / `regex_apply_manual` provenance events.
     Add-to-memory deferred (no persistence path; revisit with the lexicon decision).
+11. Stage 2 lifecycle hardening (on stage2/lifecycle-hardening): `DELETE /jobs/{id}`
+    now refuses (409) to delete a job with a non-DRAFT package or a tampered RAW
+    unless `?force=true`, and writes a durable deletion record to an append-only
+    `data/transcript_deletions.jsonl` sidecar BEFORE the cascade (the trail
+    outlives the deletion). Frontend: confirm dialog enumerating what's removed +
+    a force-override second confirm on 409; distinct badges for
+    preprocessing/transcribing/assembling; "Unbound Jobs" relabelled "Detached
+    transcripts" with "Reattach to Current Case". No schema migration.
 
 The next work should come from `docs/audits/REAL_WORLD_VALIDATION_LOG.md`,
 not from assumptions that Waves 19–20 are still unwired.
