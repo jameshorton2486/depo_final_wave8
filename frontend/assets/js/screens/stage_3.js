@@ -1,4 +1,4 @@
-        function runCustomRegexRulePipeline() {
+        async function runCustomRegexRulePipeline() {
             const findVal = document.getElementById('regexFindInput').value;
             const replaceVal = document.getElementById('regexReplaceInput').value;
 
@@ -6,51 +6,41 @@
                 showToast("Please enter a valid Find RegEx.", "red");
                 return;
             }
+            const jobId = (state.activeTranscriptJobIds || [])[0];
+            if (!jobId) {
+                showToast("Load a transcript job before applying a rule.", "amber");
+                return;
+            }
             if (!window.confirm("Apply this regex replacement to the authoritative working transcript? Raw transcript text and audio will remain unchanged.")) {
                 return;
             }
+            if (!window.api || typeof window.api.applyRegexRules !== "function") {
+                showToast("Apply Rule backend unavailable.", "red");
+                return;
+            }
 
-            showToast("Running Python Pipeline Preprocessing...", "indigo");
-
+            showToast("Applying rule through the correction engine…", "indigo");
             try {
-                const regex = new RegExp(findVal, 'gi');
-                let matchesCount = 0;
-
-                state.transcriptLines.forEach(line => {
-                    if (line.jobId && line.text.match(regex)) {
-                        line.text = line.text.replace(regex, replaceVal);
-                        matchesCount++;
-                    }
-                });
-
-                if (matchesCount > 0) {
-                    addProvenanceRecord("Python RegEx Pipeline", `Executed find/replace [${findVal}] -> [${replaceVal}]. ${matchesCount} substitutions completed.`, "system", {
-                        eventType: 'regex_pipeline',
-                        source: 'workspace',
-                        metadata: {
-                            find_pattern: findVal,
-                            replace_with: replaceVal,
-                            substitutions: matchesCount,
-                        },
-                    });
-                    compileAndRenderTranscript();
-                    queueWorkspaceTranscriptSave('regex_pipeline');
-                    showToast(`Pipeline execution successful: ${matchesCount} modifications applied.`, "emerald");
-                } else {
-                    showToast("No pattern occurrences located in transcription arrays.", "amber");
-                }
+                // The backend runs the deterministic regex engine over the
+                // working layer and persists the result (raw untouched). We
+                // then re-load the authoritative working transcript from the
+                // server rather than mutating state.transcriptLines locally.
+                const result = await window.api.applyRegexRules(jobId, [
+                    { find_pattern: findVal, replace_with: replaceVal },
+                ]);
+                await reloadWorkspaceTranscript();
+                const n = result.substitutions || 0;
+                showToast(
+                    n > 0
+                        ? `Rule applied: ${n} substitution(s) in the working transcript.`
+                        : "Rule applied: no matches found.",
+                    n > 0 ? "emerald" : "amber");
             } catch (err) {
-                showToast(`Regex Error: ${err.message}`, "red");
+                showToast(`Apply Rule failed: ${err.message || err}`, "red");
             }
         }
 
         // Trigger dynamic extraction of Deepgram suggestions (Stage 3)
-        function triggerAISuggestionExtraction() {
-            showToast("Aligning LLM confidence scores...", "cyan");
-            addProvenanceRecord("AI Model Suggestions", "Parsed low confidence speech boundaries.", "ai");
-            compileAndRenderTranscript();
-        }
-
         function _workspaceSaveState() {
             if (!state.workspaceSave) {
                 state.workspaceSave = {
@@ -257,13 +247,6 @@
                 showToast('Copy failed — select and copy manually.', 'red');
             }
             document.body.removeChild(ta);
-        }
-
-        function updateTemperatureSlider(val) {
-            const sliderLabel = document.getElementById('sliderVal');
-            if (val == 1) sliderLabel.innerText = "Strict (0.2)";
-            if (val == 2) sliderLabel.innerText = "Balanced (0.5)";
-            if (val == 3) sliderLabel.innerText = "Adaptive Creative (0.8)";
         }
 
         // Theme layout engine (MS Word vs Dark Canvas)
@@ -1133,28 +1116,6 @@
             );
         }
 
-        function removeFillerWordsGlobal() {
-            if (!window.confirm("Strip acoustic fillers from the authoritative working transcript? Raw transcript text and audio will remain unchanged.")) {
-                return;
-            }
-            state.transcriptLines.forEach(line => {
-                if (line.jobId) {
-                    line.text = line.text.replace(/\b(um|uh)\b/gi, '').replace(/\s+/g, ' ').trim();
-                    line.isWorkingOverride = true;
-                    line.workingSource = 'filler_strip';
-                }
-            });
-            addProvenanceRecord("Acoustic Prep Pipeline", "Removed linguistic fillers (um/uh) globally.", "system", {
-                eventType: 'filler_strip',
-                metadata: {
-                    scope: 'workspace',
-                },
-            });
-            compileAndRenderTranscript();
-            queueWorkspaceTranscriptSave('remove_fillers');
-            showToast("Linguistic fillers removed globally.", "emerald");
-        }
-
         // Global playback sync controls
         async function toggleAudioPlayback() {
             const playback = _playbackState();
@@ -1795,8 +1756,6 @@
 
 
 window.runCustomRegexRulePipeline = runCustomRegexRulePipeline;
-window.triggerAISuggestionExtraction = triggerAISuggestionExtraction;
-window.updateTemperatureSlider = updateTemperatureSlider;
 window.toggleTranscriptTheme = toggleTranscriptTheme;
 window.compileAndRenderTranscript = compileAndRenderTranscript;
 window.createInlineSuggestionCassette = createInlineSuggestionCassette;
@@ -1811,7 +1770,6 @@ window.rejectSuggestion = rejectSuggestion;
 window.acceptAndRememberSuggestion = acceptAndRememberSuggestion;
 window.applyLinePrefix = applyLinePrefix;
 window.forceManualPageBreak = forceManualPageBreak;
-window.removeFillerWordsGlobal = removeFillerWordsGlobal;
 window.toggleAudioPlayback = toggleAudioPlayback;
 window.changeAudioSpeed = changeAudioSpeed;
 window.skipAudio = skipAudio;

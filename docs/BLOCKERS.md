@@ -40,6 +40,21 @@ implementation blockers unless explicitly reopened.
   Scope together with the per-utterance speaker re-attribution work (same
   raw-diarization-granularity root cause).
 
+## Recorded Architectural Invariants
+
+- **Verbatim-first is system-wide — there is NO filler-suppression path.**
+  Deepgram (`filler_words=true`), the assembler (preserves filler tokens,
+  marks them via `is_filler`), and Stage G (`GUARD-01` shields fillers from
+  the correction engine) all enforce verbatim-first at their respective
+  layers. Confirmed 2026-05-29: there is no filler-suppression path anywhere
+  in the codebase, and adding one to the canonical/working/raw layers would
+  violate `CLAUDE.md §5A`. The Stage 3 "Strip Acoustic Fillers" button (the
+  one mechanism that ever did this) was removed in the Stage 3 Workspace
+  cleanup pass. A future "clean read copy" feature, if ever scoped, MUST be an
+  explicit export-time transform on a derived artifact — never on the working
+  transcript or RAW. Do not reflexively add filler suppression because it is
+  requested; surface this invariant first.
+
 ## Active Policy Question
 
 - **Q20-6** — confirm whether the current Stage 5/packaging required-field set

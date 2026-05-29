@@ -47,7 +47,7 @@
                 requestingParty: "",
                 updatedAt: "",
                 dirtySinceSave: false,
-                strictLineLock: true,
+                strictLineLock: false,
                 signature: "",
                 certified: false
             },
