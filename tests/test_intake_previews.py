@@ -8,6 +8,7 @@ Covers the additive pieces added by the Stage 1 operator-transparency pass:
 from __future__ import annotations
 
 from backend.deepgram.client import DEEPGRAM_PARAMS
+from backend.db.repository import get_connection
 from backend.services import intake_store
 
 
@@ -381,6 +382,101 @@ def test_operator_origin_keeps_existing_parser_terms_when_saving_manual_edits(cl
     terms = {entry["term"]: entry for entry in read.json()["keyterms"]}
     assert "FEB Transport" in terms
     assert "Mario Leal" in terms
+
+
+def test_parse_sync_persists_appearances_into_normalized_tables(client, created_case):
+    case_id = created_case["case_id"]
+
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "origin": "parse",
+        "ufmStyle": "SARAH JENKINS vs. NEXUS PHARMA INC.",
+        "parser_metadata": {
+            "appearances": [
+                {
+                    "name": "Justin A. Hill",
+                    "firm": "Hill Law Firm",
+                    "bar_number": "24000001",
+                    "side": "plaintiff",
+                },
+                {
+                    "name": "Gregory J. Peterson",
+                    "firm": "Peterson Trial Group",
+                    "bar_number": "24000002",
+                    "side": "defendant",
+                },
+            ],
+        },
+    })
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT a.full_name, a.bar_number, ca.firm_name, ca.role_label, p.role, p.name
+            FROM case_attorneys ca
+            JOIN attorneys a ON a.attorney_id = ca.attorney_id
+            JOIN parties p ON p.party_id = ca.represents_party_id
+            WHERE ca.case_id = ?
+            ORDER BY p.role, a.full_name
+            """,
+            (case_id,),
+        ).fetchall()
+
+    assert len(rows) == 2
+    assert rows[0]["role_label"] == "Parsed NOD appearance"
+    assert rows[1]["role_label"] == "Parsed NOD appearance"
+    assert {row["full_name"] for row in rows} == {"Justin A. Hill", "Gregory J. Peterson"}
+    assert {row["name"] for row in rows} == {"SARAH JENKINS", "NEXUS PHARMA INC."}
+
+
+def test_parse_sync_replaces_prior_parser_managed_case_attorneys_on_reparse(client, created_case):
+    case_id = created_case["case_id"]
+
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "origin": "parse",
+        "ufmStyle": "SARAH JENKINS vs. NEXUS PHARMA INC.",
+        "parser_metadata": {
+            "appearances": [
+                {
+                    "name": "Justin A. Hill",
+                    "firm": "Hill Law Firm",
+                    "bar_number": "24000001",
+                    "side": "plaintiff",
+                },
+            ],
+        },
+    })
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "origin": "parse",
+        "ufmStyle": "SARAH JENKINS vs. NEXUS PHARMA INC.",
+        "parser_metadata": {
+            "appearances": [
+                {
+                    "name": "Gregory J. Peterson",
+                    "firm": "Peterson Trial Group",
+                    "bar_number": "24000002",
+                    "side": "defendant",
+                },
+            ],
+        },
+    })
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT a.full_name, ca.role_label
+            FROM case_attorneys ca
+            JOIN attorneys a ON a.attorney_id = ca.attorney_id
+            WHERE ca.case_id = ?
+            ORDER BY a.full_name
+            """,
+            (case_id,),
+        ).fetchall()
+
+    assert [row["full_name"] for row in rows] == ["Gregory J. Peterson"]
+    assert rows[0]["role_label"] == "Parsed NOD appearance"
 
 
 def test_ufm_preview_404_on_unknown_case(client):

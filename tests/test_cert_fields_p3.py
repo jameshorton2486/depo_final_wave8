@@ -11,6 +11,7 @@ import pytest
 
 from backend.db import repository as dbrepo
 from backend.db.depo_meta_repo import upsert_depo_meta
+from backend.services import intake_store
 from backend.transcript import repository as trepo
 
 
@@ -22,8 +23,9 @@ from backend.transcript import repository as trepo
 def full_job(client) -> str:
     """Create a complete job with all certificate fields populated.
 
-    Creates: reporting_firm + office → reporter → case + party + attorney
-    → session (linked) → transcript job (linked) + deposition_metadata.
+    Creates: reporting_firm + office → reporter → case → Stage 1 appearance
+    sync into normalized attorney tables → session (linked) → transcript job
+    (linked) + deposition_metadata.
     Returns job_id.
     """
     from backend.db.repository import get_connection
@@ -64,28 +66,21 @@ def full_job(client) -> str:
         "state": "Texas",
     })
     case_id = case["case_id"]
-
-    # Plaintiff party + attorney + case_attorney (populates counsel_of_record)
-    party_id = str(uuid.uuid4())
-    attorney_id = str(uuid.uuid4())
-    ca_id = str(uuid.uuid4())
-    with get_connection() as conn:
-        conn.execute(
-            "INSERT INTO parties (party_id, case_id, role, name, entity_type) "
-            "VALUES (?, ?, 'plaintiff', 'Acme Corp.', 'corporation')",
-            (party_id, case_id),
-        )
-        conn.execute(
-            "INSERT INTO attorneys (attorney_id, full_name, bar_number) "
-            "VALUES (?, ?, ?)",
-            (attorney_id, "Mr. D. Nunez", "24098765"),
-        )
-        conn.execute(
-            "INSERT INTO case_attorneys "
-            "(case_attorney_id, case_id, attorney_id, represents_party_id, firm_name) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (ca_id, case_id, attorney_id, party_id, "Nunez & Associates"),
-        )
+    intake_store.sync_stage1_artifacts({
+        "case_id": case_id,
+        "origin": "parse",
+        "ufmStyle": "Acme Corp. v. Dana Reed",
+        "parser_metadata": {
+            "appearances": [
+                {
+                    "name": "Mr. D. Nunez",
+                    "firm": "Nunez & Associates",
+                    "bar_number": "24098765",
+                    "side": "plaintiff",
+                },
+            ],
+        },
+    })
 
     # Session
     session = dbrepo.create_session({
@@ -183,6 +178,7 @@ def test_assemble_auto_populates_case_fields(client, full_job):
     assert "DANA REED" in cert_text           # witness_name (cert uppercases it)
     assert "Miah Bardot" in cert_text         # reporter_name
     assert "TX-10423" in cert_text            # reporter_csr_number
+    assert "Mr. D. Nunez" in cert_text        # counsel_of_record from synced appearances
 
 
 def test_assembled_certificate_has_no_placeholders(client, full_job):

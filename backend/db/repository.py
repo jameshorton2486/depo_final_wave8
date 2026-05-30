@@ -30,6 +30,7 @@ _CASE_COLUMNS = (
     "created_at",
     "updated_at",
 )
+_MANAGED_APPEARANCE_ROLE_LABEL = "Parsed NOD appearance"
 
 
 @contextmanager
@@ -452,3 +453,218 @@ def delete_reporter(reporter_id: str) -> bool:
     with get_connection() as conn:
         cur = conn.execute("DELETE FROM reporters WHERE reporter_id = ?", (reporter_id,))
     return cur.rowcount > 0
+
+
+# ====================================================================
+# TARGETED APPEARANCES PERSISTENCE
+# ====================================================================
+
+def _split_caption_sides(caption_full: str | None) -> dict[str, str]:
+    caption = (caption_full or "").strip()
+    if not caption:
+        return {}
+    for needle in (" vs. ", " VS. ", " v. ", " V. ", " vs ", " v "):
+        if needle in caption:
+            plaintiff, defendant = caption.split(needle, 1)
+            out = {}
+            if plaintiff.strip():
+                out["plaintiff"] = plaintiff.strip()
+            if defendant.strip():
+                out["defendant"] = defendant.strip()
+            return out
+    return {}
+
+
+def _normalize_appearance_side(raw: str | None) -> str | None:
+    side = str(raw or "").strip().lower()
+    return side if side in {"plaintiff", "defendant"} else None
+
+
+def _speaker_label_from_name(full_name: str) -> str:
+    parts = [part.strip(".,") for part in (full_name or "").split() if part.strip(".,")]
+    if not parts:
+        return ""
+    honorific_map = {
+        "mr": "MR.",
+        "mrs": "MRS.",
+        "ms": "MS.",
+        "miss": "MISS",
+        "dr": "DR.",
+    }
+    first = parts[0].lower()
+    surname = parts[-1].upper()
+    honorific = honorific_map.get(first)
+    return f"{honorific} {surname}" if honorific else surname
+
+
+def _ensure_case_party(
+    conn: sqlite3.Connection,
+    *,
+    case_id: str,
+    role: str,
+    preferred_name: str,
+) -> str:
+    row = conn.execute(
+        "SELECT party_id FROM parties WHERE case_id = ? AND role = ? "
+        "ORDER BY sort_order, rowid LIMIT 1",
+        (case_id, role),
+    ).fetchone()
+    if row:
+        return row["party_id"]
+
+    party_id = str(uuid.uuid4())
+    entity_type = "corporation" if any(
+        token in preferred_name.upper()
+        for token in (" INC", " LLC", " LLP", " PLLC", " CORP", " COMPANY", " CO.", " LP")
+    ) else "other"
+    sort_order = 0 if role == "plaintiff" else 1
+    conn.execute(
+        "INSERT INTO parties (party_id, case_id, role, name, entity_type, sort_order) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (party_id, case_id, role, preferred_name, entity_type, sort_order),
+    )
+    return party_id
+
+
+def _ensure_attorney(
+    conn: sqlite3.Connection,
+    *,
+    full_name: str,
+    bar_number: str | None,
+) -> str:
+    normalized_bar = (bar_number or "").strip() or None
+    normalized_name = full_name.strip()
+
+    row = None
+    if normalized_bar:
+        row = conn.execute(
+            "SELECT attorney_id, bar_number, bar_state FROM attorneys "
+            "WHERE bar_number = ? ORDER BY rowid LIMIT 1",
+            (normalized_bar,),
+        ).fetchone()
+    if row is None:
+        row = conn.execute(
+            "SELECT attorney_id, bar_number, bar_state FROM attorneys "
+            "WHERE lower(full_name) = lower(?) ORDER BY rowid LIMIT 1",
+            (normalized_name,),
+        ).fetchone()
+    if row:
+        if normalized_bar and (not row["bar_number"] or not row["bar_state"]):
+            conn.execute(
+                "UPDATE attorneys SET bar_number = COALESCE(bar_number, ?), "
+                "bar_state = COALESCE(bar_state, 'TX') WHERE attorney_id = ?",
+                (normalized_bar, row["attorney_id"]),
+            )
+        return row["attorney_id"]
+
+    attorney_id = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO attorneys (attorney_id, full_name, bar_state, bar_number) "
+        "VALUES (?, ?, ?, ?)",
+        (attorney_id, normalized_name, "TX" if normalized_bar else None, normalized_bar),
+    )
+    return attorney_id
+
+
+def sync_case_attorney_appearances(
+    case_id: str,
+    *,
+    caption_full: str | None,
+    appearances: list[dict] | None,
+) -> dict[str, int]:
+    """Persist parser-derived appearances into parties/attorneys/case_attorneys.
+
+    This is deliberately narrow: it wires the existing normalized read path that
+    packaging already uses, without expanding the broader 16->50 field rollout.
+    Only parser-managed case_attorneys rows are replaced; unrelated/manual rows
+    are preserved.
+    """
+    side_names = _split_caption_sides(caption_full)
+    normalized: list[dict] = []
+    for appearance in appearances or []:
+        if not isinstance(appearance, dict):
+            continue
+        side = _normalize_appearance_side(appearance.get("side"))
+        name = str(appearance.get("name") or "").strip()
+        if not side or not name:
+            continue
+        normalized.append({
+            "side": side,
+            "name": name,
+            "firm": str(appearance.get("firm") or "").strip() or None,
+            "bar_number": str(appearance.get("bar_number") or "").strip() or None,
+        })
+
+    if not normalized:
+        return {"parties_written": 0, "attorneys_written": 0, "case_attorneys_written": 0}
+
+    parties_written = 0
+    attorneys_written = 0
+    case_attorneys_written = 0
+
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM case_attorneys WHERE case_id = ? AND role_label = ?",
+            (case_id, _MANAGED_APPEARANCE_ROLE_LABEL),
+        )
+
+        for item in normalized:
+            preferred_name = side_names.get(item["side"]) or item["side"].title()
+            before_party = conn.total_changes
+            party_id = _ensure_case_party(
+                conn,
+                case_id=case_id,
+                role=item["side"],
+                preferred_name=preferred_name,
+            )
+            if conn.total_changes > before_party:
+                parties_written += 1
+
+            before_attorney = conn.total_changes
+            attorney_id = _ensure_attorney(
+                conn,
+                full_name=item["name"],
+                bar_number=item["bar_number"],
+            )
+            if conn.total_changes > before_attorney:
+                attorneys_written += 1
+
+            existing = conn.execute(
+                "SELECT case_attorney_id FROM case_attorneys "
+                "WHERE case_id = ? AND attorney_id = ? AND represents_party_id = ? "
+                "ORDER BY rowid LIMIT 1",
+                (case_id, attorney_id, party_id),
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE case_attorneys SET "
+                    "firm_name = COALESCE(firm_name, ?), "
+                    "speaker_label = COALESCE(speaker_label, ?) "
+                    "WHERE case_attorney_id = ?",
+                    (item["firm"], _speaker_label_from_name(item["name"]), existing["case_attorney_id"]),
+                )
+                continue
+
+            conn.execute(
+                "INSERT INTO case_attorneys "
+                "(case_attorney_id, case_id, attorney_id, represents_party_id, "
+                "firm_name, role_label, speaker_label, is_noticing_party) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    str(uuid.uuid4()),
+                    case_id,
+                    attorney_id,
+                    party_id,
+                    item["firm"],
+                    _MANAGED_APPEARANCE_ROLE_LABEL,
+                    _speaker_label_from_name(item["name"]),
+                    1 if item["side"] == "plaintiff" else 0,
+                ),
+            )
+            case_attorneys_written += 1
+
+    return {
+        "parties_written": parties_written,
+        "attorneys_written": attorneys_written,
+        "case_attorneys_written": case_attorneys_written,
+    }

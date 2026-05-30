@@ -20,6 +20,7 @@ from typing import Any
 from loguru import logger
 
 from backend.config import settings
+from backend.db import repository as dbrepo
 from backend.models.canonical import (
     CaseIdentity,
     CaseWorkspacePacket,
@@ -548,6 +549,14 @@ def sync_stage1_artifacts(payload: dict) -> dict:
     record["field_confirmations"] = merged_confirmations
     record["ufm_fields"] = merged_ufm
 
+    appearance_sync: dict[str, int] | None = None
+    if parser_metadata.get("appearances") and dbrepo.get_case(case_id) is not None:
+        appearance_sync = dbrepo.sync_case_attorney_appearances(
+            case_id,
+            caption_full=merged_ufm.get("ufmStyle"),
+            appearances=parser_metadata.get("appearances") or [],
+        )
+
     persisted_keyterms = persist_case_keyterms(
         case_id,
         case_caption=merged_ufm.get("ufmStyle"),
@@ -604,6 +613,7 @@ def sync_stage1_artifacts(payload: dict) -> dict:
         "metadata_path": str(intake_metadata_path(case_id)),
         "keyterms": record["keyterms"],
         "parser_metadata": record["parser_metadata"],
+        "appearance_sync": appearance_sync,
         "field_confirmations": record["field_confirmations"],
         "raw_intake_notes": record["raw_intake_notes"],
         "workspace": record["workspace"],
