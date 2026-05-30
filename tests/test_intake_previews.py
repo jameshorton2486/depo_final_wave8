@@ -167,9 +167,8 @@ def test_ufm_preview_drops_stale_sources_for_cleared_fields(client, created_case
     })
     client.post("/api/intake/workspace", json={
         "case_id": case_id,
-        "parser_metadata": {
-            "field_sources": {"ufmCause": "nod_parser"},
-        },
+        "origin": "operator",
+        "ufmCause": "",
     })
 
     res = client.get(f"/api/intake/cases/{case_id}/ufm-preview")
@@ -204,6 +203,7 @@ def test_manual_keyterm_survives_reparse_sync(client, created_case):
 
     client.post("/api/intake/workspace", json={
         "case_id": case_id,
+        "origin": "parse",
         "keyterms": [
             {"term": "FEB Transport", "boost": 8.0, "category": "Organization", "source": "nod_parser"},
         ],
@@ -215,6 +215,7 @@ def test_manual_keyterm_survives_reparse_sync(client, created_case):
     assert "Mario Leal" in terms
     assert terms["Mario Leal"]["source"] == "manual"
     assert "FEB Transport" in terms
+    assert all(entry["source"] != "nod_parser" or entry["term"] == "FEB Transport" for entry in terms.values())
 
 
 def test_manual_keyterm_source_wins_on_exact_duplicate_term(client, created_case):
@@ -238,6 +239,148 @@ def test_manual_keyterm_source_wins_on_exact_duplicate_term(client, created_case
     terms = {entry["term"]: entry for entry in read.json()["keyterms"]}
     assert terms["Dr. Donald Leifer"]["source"] == "manual"
     assert terms["Dr. Donald Leifer"]["boost"] == 1.5
+
+
+def test_parse_origin_preserves_sparse_existing_ufm_fields(client, created_case):
+    case_id = created_case["case_id"]
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "ufmWitness": "Frank Benitez",
+        "ufmDate": "2026-04-16",
+        "ufmStyle": "Pavan v. Benitez",
+    })
+
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "origin": "parse",
+        "ufmCause": "2025CI11923",
+    })
+
+    body = client.get(f"/api/intake/cases/{case_id}/ufm-preview").json()
+    assert body["ufm_metadata"]["deponent"] == "Frank Benitez"
+    assert body["ufm_metadata"]["deposition_date"] == "2026-04-16"
+    assert body["ufm_metadata"]["caption"] == "Pavan v. Benitez"
+    assert body["ufm_metadata"]["cause_number"] == "2025CI11923"
+
+
+def test_missing_origin_defaults_to_parse_protection(client, created_case):
+    case_id = created_case["case_id"]
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "ufmWitness": "Frank Benitez",
+    })
+
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+    })
+
+    body = client.get(f"/api/intake/cases/{case_id}/ufm-preview").json()
+    assert body["ufm_metadata"]["deponent"] == "Frank Benitez"
+
+
+def test_operator_origin_honors_deliberate_field_clear(client, created_case):
+    case_id = created_case["case_id"]
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "ufmWitness": "Frank Benitez",
+    })
+
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "origin": "operator",
+        "ufmWitness": "",
+    })
+
+    body = client.get(f"/api/intake/cases/{case_id}/ufm-preview").json()
+    assert body["ufm_metadata"]["deponent"] is None
+    assert "ufmWitness" not in body["field_sources"]
+
+
+def test_parse_preserves_confirmed_and_manual_fields_and_surfaces_warning(client, created_case):
+    case_id = created_case["case_id"]
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "ufmCause": "2025CI11923",
+        "ufmWitness": "Frank Benitez",
+        "field_confirmations": {"ufmCause": "confirmed"},
+        "parser_metadata": {
+            "field_sources": {"ufmWitness": "manual"},
+        },
+    })
+
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "origin": "parse",
+        "ufmCause": "2025CI99999",
+        "ufmWitness": "Wrong Witness",
+        "parser_metadata": {
+            "field_sources": {
+                "ufmCause": "nod_parser",
+                "ufmWitness": "nod_parser",
+            },
+        },
+    })
+
+    read = client.get(f"/api/intake/cases/{case_id}")
+    assert read.status_code == 200
+    preview = client.get(f"/api/intake/cases/{case_id}/ufm-preview").json()
+    assert preview["ufm_metadata"]["cause_number"] == "2025CI11923"
+    assert preview["ufm_metadata"]["deponent"] == "Frank Benitez"
+    warnings = read.json()["parser_metadata"]["warnings"]
+    assert any("ufmCause" in warning for warning in warnings)
+    assert any("ufmWitness" in warning for warning in warnings)
+
+
+def test_parse_origin_replaces_stale_nod_terms_and_preserves_manual_terms(client, created_case):
+    case_id = created_case["case_id"]
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "keyterms": [
+            {"term": "Taylor Alleyne", "boost": 1.0, "category": "Clerk", "source": "nod_parser"},
+            {"term": "Mario Leal", "boost": 1.0, "category": "Videographer", "source": "manual"},
+        ],
+    })
+
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "origin": "parse",
+        "keyterms": [
+            {"term": "FEB Transport", "boost": 8.0, "category": "Organization", "source": "nod_parser"},
+            {"term": "Mario Leal", "boost": 0.8, "category": "Videographer", "source": "nod_parser"},
+        ],
+    })
+
+    read = client.get(f"/api/intake/cases/{case_id}")
+    assert read.status_code == 200
+    terms = {entry["term"]: entry for entry in read.json()["keyterms"]}
+    assert "Taylor Alleyne" not in terms
+    assert terms["FEB Transport"]["source"] == "nod_parser"
+    assert terms["Mario Leal"]["source"] == "manual"
+
+
+def test_operator_origin_keeps_existing_parser_terms_when_saving_manual_edits(client, created_case):
+    case_id = created_case["case_id"]
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "keyterms": [
+            {"term": "FEB Transport", "boost": 8.0, "category": "Organization", "source": "nod_parser"},
+        ],
+    })
+
+    client.post("/api/intake/workspace", json={
+        "case_id": case_id,
+        "origin": "operator",
+        "keyterms": [
+            {"term": "FEB Transport", "boost": 8.0, "category": "Organization", "source": "nod_parser"},
+            {"term": "Mario Leal", "boost": 1.0, "category": "Videographer", "source": "manual"},
+        ],
+    })
+
+    read = client.get(f"/api/intake/cases/{case_id}")
+    assert read.status_code == 200
+    terms = {entry["term"]: entry for entry in read.json()["keyterms"]}
+    assert "FEB Transport" in terms
+    assert "Mario Leal" in terms
 
 
 def test_ufm_preview_404_on_unknown_case(client):
