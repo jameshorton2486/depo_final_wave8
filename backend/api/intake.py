@@ -63,6 +63,7 @@ class WorkspaceInitRequest(BaseModel):
     case_id: str
     session_id: Optional[str] = None
     reporter_name: Optional[str] = None
+    origin: Optional[str] = None
 
     # Block 1 — case identity
     ufmCause: Optional[str] = None
