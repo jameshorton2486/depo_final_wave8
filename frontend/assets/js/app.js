@@ -473,7 +473,7 @@
             if (state.caseId) {
                 try {
                     state.stage1.rawIntakeNotes = (document.getElementById('rawIntakeNotes') || {}).value || '';
-                    const syncResult = await window.api.syncStage1Artifacts(state);
+                    const syncResult = await window.api.syncStage1Artifacts(state, 'operator');
                     state.stage1.keytermEntries = (syncResult && syncResult.keyterms) || state.stage1.keytermEntries;
                     state.stage1.parserMetadata = (syncResult && syncResult.parser_metadata) || state.stage1.parserMetadata;
                     state.stage1.field_confirmations = (syncResult && syncResult.field_confirmations) || state.stage1.field_confirmations;

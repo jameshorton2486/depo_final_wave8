@@ -122,12 +122,24 @@
         };
     }
 
-    function buildStage1SyncPayload(stateObj) {
+    function normalizeStage1SyncOrigin(reason) {
+        const raw = String(reason || '').trim().toLowerCase();
+        if (raw === 'nod-parser' || raw === 'text-parser' || raw === 'parse') {
+            return 'parse';
+        }
+        if (raw === 'field-confirmed' || raw === 'confirm-all' || raw === 'operator') {
+            return 'operator';
+        }
+        return 'parse';
+    }
+
+    function buildStage1SyncPayload(stateObj, reason) {
         const caseInfo = stateObj.caseInfo || {};
         const stage1 = stateObj.stage1 || {};
         return {
             case_id: stateObj.caseId,
             session_id: stateObj.sessionId,
+            origin: normalizeStage1SyncOrigin(reason),
             reporter_name: (caseInfo.csrName || '').trim() || null,
             ufmCause: caseInfo.cause || null,
             ufmStyle: caseInfo.caption || null,
@@ -320,8 +332,8 @@
         },
 
         // Stage 1 authoritative artifact sync
-        syncStage1Artifacts(stateObj) {
-            return _fetch('POST', '/intake/workspace', buildStage1SyncPayload(stateObj));
+        syncStage1Artifacts(stateObj, reason) {
+            return _fetch('POST', '/intake/workspace', buildStage1SyncPayload(stateObj, reason));
         },
         getStage1Artifacts(caseId) {
             return _fetch('GET', `/intake/cases/${encodeURIComponent(caseId)}`);

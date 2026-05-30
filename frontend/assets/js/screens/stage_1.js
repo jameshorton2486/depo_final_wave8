@@ -177,7 +177,7 @@
             state.stage1.rawIntakeNotes = (document.getElementById('rawIntakeNotes') || {}).value || state.stage1.rawIntakeNotes;
             state.stage1.keytermEntries = collectStage1KeytermEntries();
             try {
-                const result = await window.api.syncStage1Artifacts(state);
+                const result = await window.api.syncStage1Artifacts(state, reason);
                 if (result && result.keyterms) {
                     state.stage1.keytermEntries = result.keyterms;
                 }
