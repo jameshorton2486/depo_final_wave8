@@ -42,6 +42,7 @@ class ExhibitEvent:
 
     exhibit_number: str
     exhibit_title: str = ""
+    description: str = ""
     snapshot_id: str = ""
     anchor_utterance_id: str = ""
     render_line_id: str = ""
@@ -222,7 +223,7 @@ def build_exhibit_index(
             label=f"Exhibit {ev.exhibit_number}",
             owner_snapshot_id=ev.snapshot_id,
             owner_render_line_id=ev.render_line_id,
-            detail=ev.exhibit_title or "")
+            detail=ev.description or ev.exhibit_title or "")
         entry.refresh_reference(resolver)
         exhibit = Exhibit(
             exhibit_number=str(ev.exhibit_number),

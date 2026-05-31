@@ -487,6 +487,7 @@ def _build_paginated_and_index_inputs_from_snapshot_state(
             ExhibitEvent(
                 exhibit_number=str(ex.get("exhibit_number") or ""),
                 exhibit_title=str(ex.get("exhibit_title") or ""),
+                description=str(ex.get("description") or ""),
                 snapshot_id=snapshot_id,
                 anchor_utterance_id=str(ex.get("anchor_utterance_id") or ""),
                 render_line_id=render_line_id or "",
