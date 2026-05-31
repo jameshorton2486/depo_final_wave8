@@ -88,10 +88,12 @@ def _index_inputs() -> IndexInputs:
         ],
         exhibit_events=[
             ExhibitEvent(exhibit_number="2", exhibit_title="Contract",
+                         description="Master service agreement",
                          snapshot_id="snap-abc",
                          anchor_utterance_id="utt-20",
                          render_line_id="L20"),
             ExhibitEvent(exhibit_number="1", exhibit_title="Photograph",
+                         description="Scene photograph",
                          snapshot_id="snap-abc",
                          anchor_utterance_id="utt-10",
                          render_line_id="L10"),
@@ -190,6 +192,29 @@ def test_exhibit_index_is_numeric_order():
     indices, exhibits = generate_indices(_index_inputs(), _paginated())
     numbers = [e.exhibit_number for e in exhibits]
     assert numbers == ["1", "2"]
+
+
+def test_exhibit_index_prefers_description_over_title():
+    indices, _ = generate_indices(_index_inputs(), _paginated())
+    details = [e.detail for e in indices["exhibit"].entries]
+    assert details == ["Scene photograph", "Master service agreement"]
+
+
+def test_exhibit_index_falls_back_to_title_when_description_empty():
+    inputs = IndexInputs(
+        exhibit_events=[
+            ExhibitEvent(
+                exhibit_number="7",
+                exhibit_title="Timeline",
+                description="",
+                snapshot_id="snap-abc",
+                anchor_utterance_id="utt-10",
+                render_line_id="L10",
+            )
+        ]
+    )
+    indices, _ = generate_indices(inputs, _paginated())
+    assert indices["exhibit"].entries[0].detail == "Timeline"
 
 
 def test_index_entries_resolve_to_stable_page_references():
@@ -698,6 +723,7 @@ def test_packaging_uses_snapshot_exhibit_events_not_live_db(client, sample_job_w
     assert len(index_inputs.exhibit_events) == 1
     assert index_inputs.exhibit_events[0].exhibit_number == "1"
     assert index_inputs.exhibit_events[0].exhibit_title == "Photograph"
+    assert index_inputs.exhibit_events[0].description == ""
     assert index_inputs.exhibit_events[0].snapshot_id == snap.snapshot_id
     assert index_inputs.exhibit_events[0].anchor_utterance_id == "utt-2"
 
@@ -709,6 +735,7 @@ def test_packaging_assembles_authoritative_exhibit_index_from_snapshot(client, s
     trepo.create_exhibit(job_id, {
         "exhibit_number": "3",
         "exhibit_title": "Contract",
+        "description": "Executed services contract",
         "anchor_utterance_id": "utt-4",
     })
 
@@ -736,6 +763,7 @@ def test_packaging_assembles_authoritative_exhibit_index_from_snapshot(client, s
     package_detail = client.get(f"/api/packages/{body['package_id']}").json()
     exhibit_entries = package_detail["package"]["indices"]["exhibit"]["entries"]
     assert exhibit_entries[0]["label"] == "Exhibit 3"
+    assert exhibit_entries[0]["detail"] == "Executed services contract"
     assert exhibit_entries[0]["owner_snapshot_id"] == snap_id
     assert exhibit_entries[0]["owner_render_line_id"]
 
@@ -747,6 +775,7 @@ def test_packaging_admin_pages_preserve_visible_index_output(client, sample_job_
     trepo.create_exhibit(job_id, {
         "exhibit_number": "3",
         "exhibit_title": "Contract",
+        "description": "Executed services contract",
         "anchor_utterance_id": "utt-4",
     })
 
@@ -768,6 +797,7 @@ def test_packaging_admin_pages_preserve_visible_index_output(client, sample_job_
     exhibit_lines = admin_pages["exhibit_index"]["lines"]
 
     assert any("Exhibit 3" in line for line in exhibit_lines)
+    assert any("Executed services contract" in line for line in exhibit_lines)
     assert not any("owner_snapshot_id" in line for line in exhibit_lines)
 
 
