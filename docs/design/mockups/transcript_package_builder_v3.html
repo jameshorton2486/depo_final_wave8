@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DEPO-PRO — Transcript Package Builder (v3, rules engine)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Lora:wght@0,400;0,500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+ body{font-family:'Inter',sans-serif}.mono{font-family:'JetBrains Mono',monospace}
+ ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:#5b6170;border-radius:3px}
+ .tree-line{position:relative;padding-left:1.25rem}.tree-line::before{content:'├──';position:absolute;left:0;color:#475569;font-family:'JetBrains Mono'}.tree-last::before{content:'└──'}
+</style></head>
+<body class="bg-slate-950 text-slate-100 h-screen flex flex-col overflow-hidden">
+
+<header class="bg-slate-900 border-b border-slate-800 px-6 py-3 flex items-center justify-between z-10 shrink-0">
+  <div class="flex items-center gap-4">
+    <div class="flex items-center gap-2"><div class="bg-indigo-600 p-2 rounded-lg shadow-md shadow-indigo-500/20"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div>
+    <span class="font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">DEPO-PRO</span></div>
+    <div class="h-6 w-px bg-slate-800"></div>
+    <span class="px-2 py-0.5 text-[10px] font-semibold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>WORKING</span>
+  </div>
+  <nav class="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 text-xs">
+    <span class="px-2 py-1 text-slate-400">1 Intake</span><span class="text-slate-700">→</span>
+    <span class="px-2 py-1 text-slate-400">2 Transcripts</span><span class="text-slate-700">→</span>
+    <span class="px-2 py-1 text-slate-400">3 Workspace</span><span class="text-slate-700">→</span>
+    <span class="px-2 py-1 rounded-lg text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 font-medium">4 Package Builder</span><span class="text-slate-700">→</span>
+    <span class="px-2 py-1 text-slate-400">5 Exhibits</span><span class="text-slate-700">→</span>
+    <span class="px-2 py-1 text-slate-400">6 Certify</span><span class="text-slate-700">→</span>
+    <span class="px-2 py-1 text-slate-400">7 Export</span>
+  </nav>
+</header>
+
+<div class="flex-1 flex overflow-hidden">
+  <div class="flex-1 flex flex-col min-w-0 p-6 pr-3">
+    <h2 class="text-xl font-bold text-white mb-1">Transcript Package Builder</h2>
+    <p class="text-sm text-slate-400 mb-4">Rules-driven assembly. You set the inputs; the engine derives the architecture; you review and may override with the basis shown.</p>
+
+    <div class="flex gap-1 border-b border-slate-800 mb-4 text-xs font-semibold overflow-x-auto">
+      <button onclick="tab('type')" data-t="type" class="tb px-3 py-2 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Package Type</button>
+      <button onclick="tab('pages')" data-t="pages" class="tb px-3 py-2 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Administrative Pages</button>
+      <button onclick="tab('indices')" data-t="indices" class="tb px-3 py-2 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Indices</button>
+      <button onclick="tab('certs')" data-t="certs" class="tb px-3 py-2 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Certificates</button>
+      <button onclick="tab('templates')" data-t="templates" class="tb px-3 py-2 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Template Selection</button>
+      <button onclick="tab('preview')" data-t="preview" class="tb px-3 py-2 border-b-2 border-transparent text-slate-400 whitespace-nowrap">Package Preview</button>
+    </div>
+
+    <div class="flex-1 overflow-y-auto bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+      <!-- PACKAGE TYPE: the rules engine inputs + derived architecture -->
+      <div id="p-type" class="pane">
+        <div class="grid grid-cols-3 gap-6">
+          <div>
+            <div class="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-2">1 · Record Type <span class="text-[9px] text-slate-500">(primary gate)</span></div>
+            <div class="space-y-2 text-sm">
+              <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="rt" checked onchange="setRT('freelance')" class="accent-indigo-500">Freelance (deposition)</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="rt" onchange="setRT('official')" class="accent-indigo-500">Official (trial)</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="rt" onchange="setRT('cna')" class="accent-indigo-500">Certificate of Non-Appearance</label>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-2">2 · Jurisdiction</div>
+            <div class="space-y-2 text-sm">
+              <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="ju" checked onchange="setJU('tx')" class="accent-indigo-500">Texas State</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="ju" onchange="setJU('fed')" class="accent-indigo-500">Federal</label>
+              <label class="flex items-center gap-2 cursor-pointer text-slate-500"><input type="radio" name="ju" onchange="setJU('other')" class="accent-indigo-500">Other</label>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-2">3 · Case Type</div>
+            <div class="space-y-2 text-sm">
+              <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="ct" checked onchange="setCT('civil')" class="accent-indigo-500">Civil</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="ct" onchange="setCT('criminal')" class="accent-indigo-500">Criminal</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="ct" onchange="setCT('capital')" class="accent-indigo-500">Capital Murder</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 bg-slate-950 border border-indigo-500/20 rounded-xl p-5">
+          <div class="text-xs font-bold uppercase tracking-widest text-cyan-300 mb-3 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-cyan-400"></span>Engine-Derived Architecture <span class="text-[9px] text-slate-500 normal-case tracking-normal">— every choice shows its basis; click to override</span></div>
+          <div id="derived" class="space-y-2 text-sm"></div>
+        </div>
+      </div>
+
+      <div id="p-pages" class="pane hidden"><div class="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3">Administrative Pages</div><div id="pageList" class="grid grid-cols-2 gap-1.5 text-sm"></div></div>
+
+      <div id="p-indices" class="pane hidden text-sm text-slate-300"><div class="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3">Indices</div><div id="idxBody"></div></div>
+
+      <div id="p-certs" class="pane hidden text-sm text-slate-300"><div class="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3">Certificates</div><div id="certBody"></div></div>
+
+      <div id="p-templates" class="pane hidden">
+        <div class="flex items-center justify-between mb-2"><div class="text-xs font-bold uppercase tracking-widest text-cyan-400">Template Selection</div><span class="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">SEPARATE WORKSTREAM</span></div>
+        <p class="text-xs text-slate-500 mb-3">Firm templates may change logo, boilerplate, appearance, and add optional pages — never remove mandatory pages.</p>
+        <div class="flex flex-wrap gap-2 text-[11px]"><button class="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg hover:bg-slate-800">View</button><button class="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg hover:bg-slate-800">Edit</button><button class="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg hover:bg-slate-800">Duplicate</button><button class="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg hover:bg-slate-800">Set Default</button><button class="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg hover:bg-slate-800">+ Firm Template</button></div>
+      </div>
+
+      <div id="p-preview" class="pane hidden">
+        <div class="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3">Package Structure</div>
+        <div class="mono text-sm bg-slate-950 border border-slate-800 rounded-xl p-5"><div id="treeTitle" class="text-cyan-300 font-bold mb-2"></div><div id="tree"></div></div>
+        <p class="text-[11px] text-slate-500 mt-3">🔒 mandated (locked) · ⇅ optional. Order and presence derive from Record Type × Jurisdiction × Case Type.</p>
+      </div>
+    </div>
+
+    <div class="pt-4 flex justify-between items-center">
+      <button class="text-slate-400 hover:text-white text-xs font-semibold">◀ Workspace</button>
+      <button class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/20">Proceed to Exhibits ▶</button>
+    </div>
+  </div>
+
+  <!-- permanent validation dashboard -->
+  <div class="w-72 shrink-0 bg-slate-900 border-l border-slate-800 p-5 overflow-y-auto">
+    <h3 class="text-xs font-bold uppercase tracking-widest text-amber-400 mb-1 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-amber-400"></span>Package Validation</h3>
+    <p class="text-[10px] text-slate-500 mb-1">Conditional on the gates above. Certify is blocked only by <span class="text-rose-300">errors</span>, not <span class="text-amber-300">warnings</span>.</p>
+    <div id="val" class="space-y-2 text-xs mt-3"></div>
+    <div class="mt-5 pt-4 border-t border-slate-800"><div id="gate" class="text-[11px]"></div></div>
+  </div>
+</div>
+
+<script>
+let RT='freelance', JU='tx', CT='civil';
+function setRT(v){RT=v;render()} function setJU(v){JU=v;render()} function setCT(v){CT=v;render()}
+function tab(n){document.querySelectorAll('.pane').forEach(p=>p.classList.add('hidden'));document.getElementById('p-'+n).classList.remove('hidden');
+ document.querySelectorAll('.tb').forEach(b=>{const on=b.dataset.t===n;b.classList.toggle('text-indigo-400',on);b.classList.toggle('text-slate-400',!on);b.style.borderBottomColor=on?'#6366f1':'transparent';});}
+
+function render(){
+ const isCNA=RT==='cna', isOff=RT==='official', isFree=RT==='freelance';
+ const jLabel=JU==='tx'?'Texas (TRCP 203)':JU==='fed'?'Federal (FRCP 30(f))':'Other';
+ // derived architecture w/ basis
+ const D=[];
+ if(isCNA){D.push(['Package architecture','Non-appearance — body suppressed; appearances inline','Record Type = CNA']);
+  D.push(['Index','None (CNA carries its own proceedings)','Record Type = CNA']);}
+ else if(isFree){D.push(['Package architecture','Standard deposition','Record Type = Freelance']);
+  D.push(['Index','Consolidated single index (no required format; modeled on Shaw)','Freelance · UFM 3.24(b)']);
+  D.push(['Exhibit index','Number · description · page marked (no offered/admitted)','Freelance · 3.24(a)(6)']);}
+ else {D.push(['Package architecture','Official reporter\u2019s record','Record Type = Official']);
+  D.push(['Index','Three indexes: chronological + alphabetical + exhibit','Official · UFM 3.23']);
+  D.push(['Exhibit index','Columnar; offered + received into evidence','Official · 3.23(c)']);}
+ D.push(['Certificate', JU==='fed'?'Federal FRCP 30(f)(1) certificate':JU==='tx'?(isCNA?'CNA certificate (TRCP) + jurat':'TRCP 203: Reporter\u2019s Cert + Further Certification'):'Jurisdiction rules TBD', 'Jurisdiction = '+jLabel]);
+ D.push(['Caption', JU==='fed'?'Federal District Court (District/Division headers)':(CT==='criminal'||CT==='capital')?'Criminal co-caption (State of Texas vs.)':'State civil caption','Jurisdiction × Case Type']);
+ if(CT==='capital'&&isOff) D.push(['Venire index','Special-venire index after alphabetical index','Case Type = Capital · UFM 3.25/3.26']);
+ document.getElementById('derived').innerHTML=D.map(d=>`<div class="flex gap-3"><span class="text-slate-500 w-32 shrink-0">${d[0]}</span><span class="text-slate-100 flex-1">${d[1]}<div class="text-[10px] text-cyan-400/60 mono mt-0.5">↳ ${d[2]}</div></span></div>`).join('');
+
+ // admin pages
+ const pages=[['Caption Page',true,true],['Appearance Page',!isCNA,true],['Consolidated Index',isFree,true],['Chronological Index',isOff,true],['Alphabetical Index',isOff,true],['Exhibit Index',!isCNA,false],['Signature / Changes',isFree,true],['Reporter\u2019s Certificate',!isCNA,true],['Further Certification (Rule 203)',isFree&&JU==='tx',true],['Certificate of Non-Appearance',isCNA,true],['Master Index (multi-volume)',isOff,false]];
+ document.getElementById('pageList').innerHTML=pages.filter(p=>p[1]).map(p=>`<label class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg ${p[2]?'opacity-100':'hover:bg-slate-800'}"><span class="flex items-center gap-2"><input type="checkbox" checked ${p[2]?'disabled':''} class="accent-indigo-500">${p[0]}</span>${p[2]?'<span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">LOCKED</span>':'<span class="text-[9px] text-slate-500">optional</span>'}</label>`).join('');
+
+ // indices tab body
+ document.getElementById('idxBody').innerHTML = isCNA?'<p class="text-slate-400">CNA packages carry no index; the certificate records the non-appearance proceedings.</p>'
+   : isFree?'<p class="text-slate-400">Consolidated single index (UFM 3.24(b): no required format). Modeled on the Shaw reference: Appearances → Examinations → Signature/Changes → Certificate → EXHIBITS (NO./DESCRIPTION/PAGE). Placed after admin pages or at the end.</p>'
+   :'<p class="text-slate-400">Three separate indexes immediately after admin pages (3.23): chronological, alphabetical (Fig 23), exhibit (offered + received). Columnar; single-spaced within a witness, double-spaced between topics (3.23(e)).</p>';
+
+ // certs tab body
+ document.getElementById('certBody').innerHTML = JU==='fed'?'<p class="text-slate-400">Federal FRCP 30(f)(1) compliance certificate (single form). Federal caption with District/Division headers.</p>'
+   : JU==='tx'?(isCNA?'<p class="text-slate-400">CNA certificate: appearances inline, non-appearance proceedings, disinterest clause, jurat. <span class="text-amber-400/70">⚠ figure number unverified.</span></p>':'<p class="text-slate-400">TRCP 203: Reporter\u2019s Certificate + a separate Further Certification (Rule 203) page (changes-attached, delivery, charges, service). Always last.</p>')
+   :'<p class="text-slate-400">Other jurisdiction — certificate rules TBD.</p>';
+
+ // tree
+ const T=[];T.push(['Caption Page',1]);if(!isCNA)T.push(['Appearance Page',1]);
+ if(isFree)T.push(['Consolidated Index',0]); if(isOff){T.push(['Chronological Index',0]);T.push(['Alphabetical Index',1]);if(CT==='capital')T.push(['Venire Index',1]);T.push(['Exhibit Index',0]);}
+ if(isCNA){T.push(['Certificate of Non-Appearance',1]);}
+ else{T.push(['— Transcript Body —',1]);if(isFree)T.push(['Signature / Changes Page',1]);T.push(['Reporter\u2019s Certificate',1]);if(isFree&&JU==='tx')T.push(['Further Certification (Rule 203)',1]);}
+ document.getElementById('treeTitle').textContent=(isCNA?'CNA':isOff?'Official':'Freelance')+' · '+jLabel+(CT==='civil'?'':' · '+CT);
+ document.getElementById('tree').innerHTML=T.map((o,i)=>{const last=i===T.length-1;return `<div class="tree-line ${last?'tree-last':''} py-0.5 ${o[0].startsWith('—')?'text-slate-500':'text-slate-200'}">${o[0]}<span class="float-right text-slate-600">${o[0].startsWith('—')?'':o[1]?'🔒':'⇅'}</span></div>`;}).join('');
+
+ // conditional validation
+ const V=[{t:'Cause Number',ok:true},{t:'Case Style',ok:true},{t:'Ownership Metadata',ok:true}];
+ if(!isCNA)V.push({t:'Witness',ok:true},{t:'Appearances',ok:true},{t:'Exhibit Anchors',ok:false,err:false});
+ if(isCNA)V.push({t:'Attendees present (inline)',ok:true},{t:'Non-appearance time recorded',ok:false,err:true});
+ if(isFree&&JU==='tx')V.push({t:'Signature waiver status',ok:false,err:false});
+ if(JU==='fed')V.push({t:'Federal certificate data',ok:false,err:true});
+ V.push({t:'Certificate metadata',ok:!isCNA?false:true,err:!isCNA});
+ const errs=V.filter(x=>!x.ok&&x.err).length, warns=V.filter(x=>!x.ok&&!x.err).length;
+ document.getElementById('val').innerHTML=V.map(x=>`<div class="flex gap-2 ${x.ok?'text-emerald-300':x.err?'text-rose-300':'text-amber-300'}"><span>${x.ok?'✓':'⚠'}</span><span>${x.t}</span></div>`).join('');
+ document.getElementById('gate').innerHTML = errs>0?`<div class="text-rose-300 font-semibold">⛔ Certify blocked — ${errs} error${errs>1?'s':''}</div><div class="text-slate-500 mt-1">${warns} advisory warning${warns!==1?'s':''}</div>`:`<div class="text-emerald-300 font-semibold">✓ Certify unlocked</div><div class="text-slate-500 mt-1">${warns} advisory warning${warns!==1?'s':''} (non-blocking)</div>`;
+}
+tab('type');render();
+</script>
+</body></html>
