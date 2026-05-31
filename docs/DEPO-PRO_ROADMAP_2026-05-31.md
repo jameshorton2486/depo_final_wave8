@@ -39,11 +39,10 @@ Option A keep `export_render` · Option B cut over to `backend.pagination`. Deci
 
 ## TRACK B — Package Builder & UFM Workflow (backend rules engine)
 
-**B0 — Exhibit ownership + record-type exhibit-index fork** *(lowest-risk, fully grounded — best entry point)*.
-Add the owner-pair fields to `TranscriptExhibit` (`owner_snapshot_id`, `owner_anchor_utterance_id`) — these
-are **not yet in the codebase**; populate at anchor time, derive citations from them. Fork the exhibit index
-by record type: Official prints offered + received (3.23(c)); Freelance prints description + page marked only
-(3.24(a)(6)). Self-contained; no pagination-authority dependency.
+**B0 — Reduced scope shipped: exhibit index prints `description`.**
+The approved B0 reduction kept the live Freelance-shaped exhibit index and only changed the printed
+detail field from `exhibit_title` to `description`, with fallback to title when description is blank.
+No record-type branch, schema change, or state-hash change was introduced.
 
 **B1 — Package rules engine.**
 Inputs Record Type × Jurisdiction × Case Type → derived architecture. Supports: Freelance deposition,
@@ -104,7 +103,7 @@ Arabic numerals (6.1). *Not* auto-triggered for multi-volume Freelance depositio
 
 ## Open / ⚠VERIFY (do not assert until resolved)
 
-- Owner-pair exhibit fields not yet in this codebase (B0 closes this).
+- Owner-pair exhibit fields remain deferred; reduced-scope B0 only fixed the exhibit-index detail field.
 - Figure plates unverified from manual body: CNA (Fig 29?), signature-waived cert (Fig 9/9A?), master index,
   interpreter. Fetch the UFM figures section to lock layouts.
 - Interpreter *certificate* page: manual has setup/oaths only — confirm a distinct cert page exists before building.
@@ -140,6 +139,5 @@ Arabic numerals (6.1). *Not* auto-triggered for multi-volume Freelance depositio
 
 ## Recommended first move
 
-Start **B0** (exhibit owner-pair fields + record-type exhibit-index fork) as the first audit-first build pass:
-fully grounded, self-contained, no pagination dependency. Run **A1** in parallel as a read-only investigation
-(it changes nothing). Hold all of Track C until A2 is decided.
+Reduced-scope **B0** is shipped as a narrow description-field correction. The deferred owner-pair and
+record-type fork work should only proceed as a separate, explicitly approved follow-on pass.
