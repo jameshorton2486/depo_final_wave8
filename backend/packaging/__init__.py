@@ -23,7 +23,9 @@ See docs/wave20_packaging.md.
 from backend.packaging.indices import (
     ExhibitEvent,
     IndexInputs,
+    OwnershipResolver,
     WitnessEvent,
+    build_ownership_resolver,
     generate_indices,
 )
 from backend.packaging.manifest import (
@@ -73,7 +75,9 @@ __all__ = [
     "can_transition",
     "ExhibitEvent",
     "IndexInputs",
+    "OwnershipResolver",
     "WitnessEvent",
+    "build_ownership_resolver",
     "generate_indices",
     "build_identity",
     "build_manifest",

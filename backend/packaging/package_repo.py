@@ -93,6 +93,8 @@ def _reconstruct_package(row) -> TranscriptPackage:
         entries = [
             IndexEntry(
                 label=e.get("label", ""),
+                owner_snapshot_id=e.get("owner_snapshot_id", ""),
+                owner_render_line_id=e.get("owner_render_line_id", ""),
                 page=e.get("page"),
                 line=e.get("line"),
                 detail=e.get("detail", ""),

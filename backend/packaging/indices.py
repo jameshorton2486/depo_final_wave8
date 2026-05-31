@@ -31,6 +31,7 @@ class WitnessEvent:
 
     witness_name: str
     examination_type: str = "direct"     # direct | cross | redirect | recross
+    snapshot_id: str = ""
     render_line_id: str = ""
     volume: int = 1
 
@@ -41,6 +42,8 @@ class ExhibitEvent:
 
     exhibit_number: str
     exhibit_title: str = ""
+    snapshot_id: str = ""
+    anchor_utterance_id: str = ""
     render_line_id: str = ""
     volume: int = 1
 
@@ -51,6 +54,50 @@ class IndexInputs:
 
     witness_events: list[WitnessEvent] = field(default_factory=list)
     exhibit_events: list[ExhibitEvent] = field(default_factory=list)
+
+
+@dataclass
+class OwnershipResolver:
+    """Resolve visible citations from stable ownership metadata."""
+
+    page_reference_map: dict[str, tuple[int, int]] = field(default_factory=dict)
+    exhibit_anchor_map: dict[tuple[str, str], str] = field(default_factory=dict)
+
+    def resolve_index_entry(
+        self,
+        snapshot_id: str,
+        render_line_id: str,
+        *,
+        fallback_page: int | None = None,
+        fallback_line: int | None = None,
+    ) -> tuple[int | None, int | None]:
+        if snapshot_id and render_line_id:
+            hit = self.page_reference_map.get(render_line_id)
+            if hit is not None:
+                return hit
+        if render_line_id:
+            hit = self.page_reference_map.get(render_line_id)
+            if hit is not None:
+                return hit
+        return fallback_page, fallback_line
+
+    def resolve_exhibit(
+        self,
+        snapshot_id: str,
+        anchor_utterance_id: str,
+        *,
+        fallback_render_line_id: str = "",
+    ) -> tuple[str, int | None, int | None]:
+        render_line_id = ""
+        if snapshot_id and anchor_utterance_id:
+            render_line_id = self.exhibit_anchor_map.get(
+                (snapshot_id, anchor_utterance_id), "")
+        if not render_line_id and anchor_utterance_id:
+            render_line_id = self.exhibit_anchor_map.get(("", anchor_utterance_id), "")
+        if not render_line_id:
+            render_line_id = fallback_render_line_id
+        page, line = self.resolve_index_entry(snapshot_id, render_line_id)
+        return render_line_id, page, line
 
 
 def build_page_reference_map(paginated_document) -> dict[str, tuple[int, int]]:
@@ -81,8 +128,27 @@ def _resolve(ref_map: dict[str, tuple[int, int]],
     return hit if hit is not None else (None, None)
 
 
-def build_chronological_index(inputs: IndexInputs,
-                               ref_map: dict) -> TranscriptIndex:
+def build_ownership_resolver(
+    inputs: IndexInputs,
+    paginated_document,
+) -> OwnershipResolver:
+    """Build the ownership resolver for stable reference derivation."""
+    page_reference_map = build_page_reference_map(paginated_document)
+    exhibit_anchor_map: dict[tuple[str, str], str] = {}
+    for ev in inputs.exhibit_events:
+        if ev.anchor_utterance_id and ev.render_line_id:
+            exhibit_anchor_map[(ev.snapshot_id, ev.anchor_utterance_id)] = ev.render_line_id
+            exhibit_anchor_map.setdefault(("", ev.anchor_utterance_id), ev.render_line_id)
+    return OwnershipResolver(
+        page_reference_map=page_reference_map,
+        exhibit_anchor_map=exhibit_anchor_map,
+    )
+
+
+def build_chronological_index(
+    inputs: IndexInputs,
+    resolver: OwnershipResolver,
+) -> TranscriptIndex:
     """The chronological index — every tracked event in transcript order,
     sorted by resolved page/line. Witness examinations and exhibit
     markings interleave exactly as they occur in the testimony.
@@ -90,18 +156,22 @@ def build_chronological_index(inputs: IndexInputs,
     rows: list[IndexEntry] = []
 
     for ev in inputs.witness_events:
-        page, line = _resolve(ref_map, ev.render_line_id)
-        rows.append(IndexEntry(
+        entry = IndexEntry(
             label=ev.witness_name,
-            page=page, line=line,
-            detail=f"{ev.examination_type.title()} Examination"))
+            owner_snapshot_id=ev.snapshot_id,
+            owner_render_line_id=ev.render_line_id,
+            detail=f"{ev.examination_type.title()} Examination")
+        entry.refresh_reference(resolver)
+        rows.append(entry)
 
     for ev in inputs.exhibit_events:
-        page, line = _resolve(ref_map, ev.render_line_id)
-        rows.append(IndexEntry(
+        entry = IndexEntry(
             label=f"Exhibit {ev.exhibit_number}",
-            page=page, line=line,
-            detail=ev.exhibit_title or "Marked"))
+            owner_snapshot_id=ev.snapshot_id,
+            owner_render_line_id=ev.render_line_id,
+            detail=ev.exhibit_title or "Marked")
+        entry.refresh_reference(resolver)
+        rows.append(entry)
 
     # Chronological order = page then line. Unresolved entries (page is
     # None) sort to the end deterministically.
@@ -110,18 +180,22 @@ def build_chronological_index(inputs: IndexInputs,
     return TranscriptIndex(kind="chronological", entries=rows)
 
 
-def build_witness_index(inputs: IndexInputs,
-                         ref_map: dict) -> TranscriptIndex:
+def build_witness_index(
+    inputs: IndexInputs,
+    resolver: OwnershipResolver,
+) -> TranscriptIndex:
     """The alphabetical witness index — one entry per witness examination,
     ordered by witness surname then examination order.
     """
     rows: list[IndexEntry] = []
     for ev in inputs.witness_events:
-        page, line = _resolve(ref_map, ev.render_line_id)
-        rows.append(IndexEntry(
+        entry = IndexEntry(
             label=ev.witness_name,
-            page=page, line=line,
-            detail=f"{ev.examination_type.title()} Examination"))
+            owner_snapshot_id=ev.snapshot_id,
+            owner_render_line_id=ev.render_line_id,
+            detail=f"{ev.examination_type.title()} Examination")
+        entry.refresh_reference(resolver)
+        rows.append(entry)
 
     def _surname_key(entry: IndexEntry) -> tuple:
         parts = entry.label.strip().split()
@@ -132,8 +206,10 @@ def build_witness_index(inputs: IndexInputs,
     return TranscriptIndex(kind="witness", entries=rows)
 
 
-def build_exhibit_index(inputs: IndexInputs,
-                         ref_map: dict) -> tuple[TranscriptIndex, list[Exhibit]]:
+def build_exhibit_index(
+    inputs: IndexInputs,
+    resolver: OwnershipResolver,
+) -> tuple[TranscriptIndex, list[Exhibit]]:
     """The exhibit index — exhibits by number, with the page/line each
     was marked. Also returns the Exhibit identity records (the seam a
     later wave's exhibit-document packaging attaches to).
@@ -142,17 +218,25 @@ def build_exhibit_index(inputs: IndexInputs,
     exhibits: list[Exhibit] = []
 
     for ev in inputs.exhibit_events:
-        page, line = _resolve(ref_map, ev.render_line_id)
         entry = IndexEntry(
             label=f"Exhibit {ev.exhibit_number}",
-            page=page, line=line,
+            owner_snapshot_id=ev.snapshot_id,
+            owner_render_line_id=ev.render_line_id,
             detail=ev.exhibit_title or "")
-        rows.append(entry)
-        exhibits.append(Exhibit(
+        entry.refresh_reference(resolver)
+        exhibit = Exhibit(
             exhibit_number=str(ev.exhibit_number),
             exhibit_title=ev.exhibit_title,
+            owner_snapshot_id=ev.snapshot_id,
+            owner_anchor_utterance_id=ev.anchor_utterance_id,
             reference_render_line_id=ev.render_line_id,
-            reference=entry.reference))
+            reference=entry.reference)
+        exhibit.refresh_reference(resolver)
+        if exhibit.reference_render_line_id:
+            entry.owner_render_line_id = exhibit.reference_render_line_id
+            entry.refresh_reference(resolver)
+        rows.append(entry)
+        exhibits.append(exhibit)
 
     def _exhibit_key(entry: IndexEntry) -> tuple:
         num = entry.label.replace("Exhibit", "").strip()
@@ -176,10 +260,10 @@ def generate_indices(
     Returns (indices_by_kind, exhibits). `indices_by_kind` has keys
     'chronological', 'witness', 'exhibit'.
     """
-    ref_map = build_page_reference_map(paginated_document)
-    chronological = build_chronological_index(inputs, ref_map)
-    witness = build_witness_index(inputs, ref_map)
-    exhibit_index, exhibits = build_exhibit_index(inputs, ref_map)
+    resolver = build_ownership_resolver(inputs, paginated_document)
+    chronological = build_chronological_index(inputs, resolver)
+    witness = build_witness_index(inputs, resolver)
+    exhibit_index, exhibits = build_exhibit_index(inputs, resolver)
     return (
         {
             "chronological": chronological,

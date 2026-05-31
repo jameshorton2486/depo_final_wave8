@@ -102,14 +102,34 @@ class Exhibit:
 
     exhibit_number: str
     exhibit_title: str = ""
+    owner_snapshot_id: str = ""
+    owner_anchor_utterance_id: str = ""
     reference_render_line_id: str = ""
     reference: str = ""                       # resolved "Page N, Line M"
     exhibit_files: list[str] = field(default_factory=list)
+
+    def refresh_reference(self, resolver) -> None:
+        """Re-derive the visible citation from stable exhibit ownership."""
+        render_line_id, page, line = resolver.resolve_exhibit(
+            self.owner_snapshot_id,
+            self.owner_anchor_utterance_id,
+            fallback_render_line_id=self.reference_render_line_id,
+        )
+        if render_line_id:
+            self.reference_render_line_id = render_line_id
+        if page is None:
+            self.reference = ""
+        elif line is None:
+            self.reference = f"Page {page}"
+        else:
+            self.reference = f"Page {page}, Line {line}"
 
     def to_dict(self) -> dict:
         return {
             "exhibit_number": self.exhibit_number,
             "exhibit_title": self.exhibit_title,
+            "owner_snapshot_id": self.owner_snapshot_id,
+            "owner_anchor_utterance_id": self.owner_anchor_utterance_id,
             "reference_render_line_id": self.reference_render_line_id,
             "reference": self.reference,
             "exhibit_files": list(self.exhibit_files),
@@ -121,9 +141,22 @@ class IndexEntry:
     """One referenceable entry in an index — a stable legal reference."""
 
     label: str
+    owner_snapshot_id: str = ""
+    owner_render_line_id: str = ""
     page: int | None = None
     line: int | None = None
     detail: str = ""
+
+    def refresh_reference(self, resolver) -> None:
+        """Re-derive page/line from stable transcript ownership."""
+        page, line = resolver.resolve_index_entry(
+            self.owner_snapshot_id,
+            self.owner_render_line_id,
+            fallback_page=self.page,
+            fallback_line=self.line,
+        )
+        self.page = page
+        self.line = line
 
     @property
     def reference(self) -> str:
@@ -137,6 +170,8 @@ class IndexEntry:
     def to_dict(self) -> dict:
         return {
             "label": self.label,
+            "owner_snapshot_id": self.owner_snapshot_id,
+            "owner_render_line_id": self.owner_render_line_id,
             "page": self.page,
             "line": self.line,
             "detail": self.detail,

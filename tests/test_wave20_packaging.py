@@ -14,8 +14,17 @@ from backend.packaging import (
     validate_metadata,
     verify_package_integrity,
 )
-from backend.packaging.indices import build_page_reference_map, generate_indices
-from backend.packaging.model import PackageImmutableError, TranscriptPackage
+from backend.packaging.indices import (
+    OwnershipResolver,
+    build_page_reference_map,
+    generate_indices,
+)
+from backend.packaging.model import (
+    Exhibit,
+    IndexEntry,
+    PackageImmutableError,
+    TranscriptPackage,
+)
 from backend.packaging.packager import SECTION_ORDER
 from backend.pagination.paginator import paginate
 from backend.stage_s.models import RenderLine
@@ -69,14 +78,22 @@ def _index_inputs() -> IndexInputs:
     return IndexInputs(
         witness_events=[
             WitnessEvent(witness_name="Heath Thomas",
-                         examination_type="direct", render_line_id="L3"),
+                         examination_type="direct",
+                         snapshot_id="snap-abc",
+                         render_line_id="L3"),
             WitnessEvent(witness_name="Anna Alvarado",
-                         examination_type="cross", render_line_id="L40"),
+                         examination_type="cross",
+                         snapshot_id="snap-abc",
+                         render_line_id="L40"),
         ],
         exhibit_events=[
             ExhibitEvent(exhibit_number="2", exhibit_title="Contract",
+                         snapshot_id="snap-abc",
+                         anchor_utterance_id="utt-20",
                          render_line_id="L20"),
             ExhibitEvent(exhibit_number="1", exhibit_title="Photograph",
+                         snapshot_id="snap-abc",
+                         anchor_utterance_id="utt-10",
                          render_line_id="L10"),
         ],
     )
@@ -182,6 +199,29 @@ def test_index_entries_resolve_to_stable_page_references():
         assert entry.reference.startswith("Page ")
 
 
+def test_index_entries_preserve_internal_render_line_ownership():
+    indices, _ = generate_indices(_index_inputs(), _paginated())
+    entry = indices["witness"].entries[0]
+    assert entry.owner_snapshot_id == "snap-abc"
+    assert entry.owner_render_line_id == "L40"
+    assert entry.reference.startswith("Page ")
+
+
+def test_index_entry_refreshes_visible_citation_from_ownership():
+    resolver = OwnershipResolver(page_reference_map={"L40": (2, 16)})
+    entry = IndexEntry(
+        label="Anna Alvarado",
+        owner_snapshot_id="snap-abc",
+        owner_render_line_id="L40",
+        page=99,
+        line=99,
+    )
+    entry.refresh_reference(resolver)
+    assert entry.page == 2
+    assert entry.line == 16
+    assert entry.reference == "Page 2, Line 16"
+
+
 def test_chronological_index_in_transcript_order():
     indices, _ = generate_indices(_index_inputs(), _paginated())
     pages = [e.page for e in indices["chronological"].entries]
@@ -193,6 +233,32 @@ def test_index_generation_is_deterministic():
     b, _ = generate_indices(_index_inputs(), _paginated())
     assert a["witness"].to_dict() == b["witness"].to_dict()
     assert a["exhibit"].to_dict() == b["exhibit"].to_dict()
+
+
+def test_exhibit_records_preserve_internal_anchor_ownership():
+    _, exhibits = generate_indices(_index_inputs(), _paginated())
+    exhibit = exhibits[0]
+    assert exhibit.exhibit_number == "1"
+    assert exhibit.owner_snapshot_id == "snap-abc"
+    assert exhibit.owner_anchor_utterance_id == "utt-10"
+    assert exhibit.reference.startswith("Page ")
+
+
+def test_exhibit_refreshes_visible_citation_from_anchor_ownership():
+    resolver = OwnershipResolver(
+        page_reference_map={"L10": (1, 11)},
+        exhibit_anchor_map={("snap-abc", "utt-10"): "L10"},
+    )
+    exhibit = Exhibit(
+        exhibit_number="1",
+        owner_snapshot_id="snap-abc",
+        owner_anchor_utterance_id="utt-10",
+        reference_render_line_id="STALE",
+        reference="Page 99, Line 99",
+    )
+    exhibit.refresh_reference(resolver)
+    assert exhibit.reference_render_line_id == "L10"
+    assert exhibit.reference == "Page 1, Line 11"
 
 
 def test_unresolved_event_sorts_last_without_crashing():
@@ -590,7 +656,9 @@ def test_packaging_uses_locked_snapshot_state_not_live_db(client, sample_job_wit
     )
 
     snap = snapshot_repo.get_snapshot(snap_id)
-    paginated, _ = _build_paginated_and_index_inputs_from_snapshot_state(snap.state)
+    paginated, _ = _build_paginated_and_index_inputs_from_snapshot_state(
+        snap.state, snapshot_id=snap.snapshot_id
+    )
     body_text = "\n".join(
         slot.physical_line.text
         for page in paginated.pages
@@ -624,10 +692,14 @@ def test_packaging_uses_snapshot_exhibit_events_not_live_db(client, sample_job_w
     })
 
     snap = snapshot_repo.get_snapshot(snap_id)
-    _, index_inputs = _build_paginated_and_index_inputs_from_snapshot_state(snap.state)
+    _, index_inputs = _build_paginated_and_index_inputs_from_snapshot_state(
+        snap.state, snapshot_id=snap.snapshot_id
+    )
     assert len(index_inputs.exhibit_events) == 1
     assert index_inputs.exhibit_events[0].exhibit_number == "1"
     assert index_inputs.exhibit_events[0].exhibit_title == "Photograph"
+    assert index_inputs.exhibit_events[0].snapshot_id == snap.snapshot_id
+    assert index_inputs.exhibit_events[0].anchor_utterance_id == "utt-2"
 
 
 def test_packaging_assembles_authoritative_exhibit_index_from_snapshot(client, sample_job_with_content):
@@ -664,3 +736,113 @@ def test_packaging_assembles_authoritative_exhibit_index_from_snapshot(client, s
     package_detail = client.get(f"/api/packages/{body['package_id']}").json()
     exhibit_entries = package_detail["package"]["indices"]["exhibit"]["entries"]
     assert exhibit_entries[0]["label"] == "Exhibit 3"
+    assert exhibit_entries[0]["owner_snapshot_id"] == snap_id
+    assert exhibit_entries[0]["owner_render_line_id"]
+
+
+def test_packaging_admin_pages_preserve_visible_index_output(client, sample_job_with_content):
+    from backend.transcript import repository as trepo
+
+    job_id = sample_job_with_content
+    trepo.create_exhibit(job_id, {
+        "exhibit_number": "3",
+        "exhibit_title": "Contract",
+        "anchor_utterance_id": "utt-4",
+    })
+
+    snap_res = client.post(f"/api/snapshots/jobs/{job_id}", json={"category": "CERTIFIED"})
+    snap_id = snap_res.json()["snapshot_id"]
+    assert client.post(f"/api/snapshots/{snap_id}/lock").status_code == 200
+
+    metadata = _valid_metadata()
+    metadata["caption"] = "Acme Corp. v. Dana Reed"
+    metadata["witness_name"] = "Dana Reed"
+    assemble_res = client.post(
+        f"/api/packages/jobs/{job_id}",
+        json={"snapshot_id": snap_id, "metadata": metadata},
+    )
+    assert assemble_res.status_code == 200
+
+    package_detail = client.get(f"/api/packages/{assemble_res.json()['package_id']}").json()
+    admin_pages = package_detail["package"]["administrative_pages"]
+    exhibit_lines = admin_pages["exhibit_index"]["lines"]
+
+    assert any("Exhibit 3" in line for line in exhibit_lines)
+    assert not any("owner_snapshot_id" in line for line in exhibit_lines)
+
+
+def test_package_repo_reconstructs_index_ownership_fields(temp_db):
+    from backend.packaging.package_repo import get_package_for_update, save_package
+
+    package = _assemble(package_version=99)
+    save_package(package, "job-phase3a-ownership")
+
+    reloaded = get_package_for_update(package.package_id)
+    assert reloaded is not None
+    entry = reloaded.indices["exhibit"].entries[0]
+    assert entry.owner_snapshot_id == "snap-abc"
+    assert entry.owner_render_line_id == "L10"
+    assert entry.reference == "Page 1, Line 11"
+
+
+def test_package_repo_preserves_ownership_after_certify_transition(temp_db):
+    from backend.packaging.package_repo import get_package_for_update, save_package, update_package_state
+
+    package = _assemble(package_version=100)
+    certify_package(package, _valid_metadata())
+    save_package(package, "job-phase3b-certify")
+    assert update_package_state(package.package_id, "CERTIFIED", package)
+
+    reloaded = get_package_for_update(package.package_id)
+    assert reloaded is not None
+    entry = reloaded.indices["witness"].entries[0]
+    assert entry.owner_snapshot_id == "snap-abc"
+    assert entry.owner_render_line_id == "L40"
+    assert entry.reference.startswith("Page ")
+
+
+def test_packaging_recertify_preserves_ownership_metadata(client, sample_job_with_content):
+    from backend.transcript import repository as trepo
+
+    job_id = sample_job_with_content
+    metadata = _valid_metadata()
+    metadata["caption"] = "Acme Corp. v. Dana Reed"
+    metadata["witness_name"] = "Dana Reed"
+    trepo.create_exhibit(job_id, {
+        "exhibit_number": "7",
+        "exhibit_title": "Timeline",
+        "anchor_utterance_id": "utt-4",
+    })
+
+    first_snap = client.post(
+        f"/api/snapshots/jobs/{job_id}", json={"category": "CERTIFIED"}
+    ).json()["snapshot_id"]
+    assert client.post(f"/api/snapshots/{first_snap}/lock").status_code == 200
+    first_pkg = client.post(
+        f"/api/packages/jobs/{job_id}",
+        json={"snapshot_id": first_snap, "metadata": metadata},
+    ).json()["package_id"]
+    assert client.post(
+        f"/api/packages/{first_pkg}/certify", json={"metadata": metadata}
+    ).status_code == 200
+
+    second_snap = client.post(
+        f"/api/snapshots/jobs/{job_id}", json={"category": "CERTIFIED"}
+    ).json()["snapshot_id"]
+    assert client.post(f"/api/snapshots/{second_snap}/lock").status_code == 200
+    second_pkg_res = client.post(
+        f"/api/packages/jobs/{job_id}",
+        json={"snapshot_id": second_snap, "metadata": metadata},
+    )
+    assert second_pkg_res.status_code == 200
+    second_pkg = second_pkg_res.json()["package_id"]
+    certify_res = client.post(
+        f"/api/packages/{second_pkg}/certify", json={"metadata": metadata}
+    )
+    assert certify_res.status_code == 200
+
+    package_detail = client.get(f"/api/packages/{second_pkg}").json()
+    exhibit_entries = package_detail["package"]["indices"]["exhibit"]["entries"]
+    assert exhibit_entries[0]["owner_snapshot_id"] == second_snap
+    assert "owner_render_line_id" in exhibit_entries[0]
+    assert "reference" in exhibit_entries[0]

@@ -379,7 +379,10 @@ class CertifyRequest(BaseModel):
 # Helper: build a paginated document for a job
 # ---------------------------------------------------------------------------
 
-def _build_paginated_and_index_inputs_from_snapshot_state(snapshot_state: dict):
+def _build_paginated_and_index_inputs_from_snapshot_state(
+    snapshot_state: dict,
+    snapshot_id: str = "",
+):
     """Return frozen pagination + index inputs from locked snapshot state.
 
     Certification and packaging must freeze from the snapshot state, not
@@ -484,6 +487,8 @@ def _build_paginated_and_index_inputs_from_snapshot_state(snapshot_state: dict):
             ExhibitEvent(
                 exhibit_number=str(ex.get("exhibit_number") or ""),
                 exhibit_title=str(ex.get("exhibit_title") or ""),
+                snapshot_id=snapshot_id,
+                anchor_utterance_id=str(ex.get("anchor_utterance_id") or ""),
                 render_line_id=render_line_id or "",
             )
         )
@@ -538,7 +543,8 @@ def assemble(job_id: str, payload: AssembleRequest) -> dict:
     # Build the paginated body from the LOCKED snapshot state.
     try:
         paginated, index_inputs = _build_paginated_and_index_inputs_from_snapshot_state(
-            snap.state or {}
+            snap.state or {},
+            snapshot_id=snap.snapshot_id,
         )
     except Exception as exc:
         raise HTTPException(

@@ -15,6 +15,10 @@ from backend.pagination.model import (
     Page,
     PaginatedDocument,
 )
+from backend.pagination.legal_validation import (
+    LegalPageMapValidationResult,
+    validate_legal_page_map,
+)
 from backend.pagination.paginator import paginate
 
 __all__ = [
@@ -22,5 +26,7 @@ __all__ = [
     "PageSlot",
     "Page",
     "PaginatedDocument",
+    "LegalPageMapValidationResult",
     "paginate",
+    "validate_legal_page_map",
 ]

@@ -45,6 +45,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from loguru import logger
+
 from backend.pagination.model import (
     LINES_PER_PAGE,
     Page,
@@ -52,6 +54,7 @@ from backend.pagination.model import (
     PhysicalLine,
     PaginatedDocument,
 )
+from backend.pagination.validation import validate_formatted_stream
 from backend.pagination.wrapping import _wrap_text
 
 # Texas deposition layout standard.
@@ -165,6 +168,28 @@ def _body_lines_for(working_line: dict, body_width: int) -> list[tuple[str, str]
     for seg in _wrap_text(text, body_width - len(QA_INDENT)):
         out.append((f"{QA_INDENT}{seg}", "continuation" if out else "colloquy"))
     return out
+
+
+def _build_formatted_stream(
+    working_lines: list[dict],
+    *,
+    proceedings_date: str = "",
+    body_width: int = 64,
+) -> list[tuple[str, str]]:
+    """Assemble the authoritative preformatted export stream."""
+
+    stream: list[tuple[str, str]] = []
+
+    if proceedings_date:
+        stream.append((f"PROCEEDINGS, {proceedings_date.upper()}", "proceedings"))
+        stream.append(("", "blank"))
+
+    for wl in working_lines:
+        for (text, kind) in _body_lines_for(wl, body_width):
+            stream.append((text, kind))
+        stream.append(("", "blank"))
+
+    return stream
 
 
 def _new_export_page(page_number: int) -> Page:
@@ -316,13 +341,6 @@ def render_export_with_layout(
     Returns (ExportDocument, PaginatedDocument). When the input is empty
     the second element is None.
     """
-    # --- assemble the logical line stream -----------------------------
-    stream: list[tuple[str, str]] = []
-
-    # Front matter (caption is page-1 header, handled at pagination time).
-    if proceedings_date:
-        stream.append((f"PROCEEDINGS, {proceedings_date.upper()}", "proceedings"))
-        stream.append(("", "blank"))
     # The opening ritual (witness-sworn block, EXAMINATION header, BY-line)
     # is owned by backend/stage_s/ and arrives in `working_lines`; this
     # module no longer emits a parallel ritual here. The witness-sworn
@@ -330,12 +348,11 @@ def render_export_with_layout(
     # never auto-asserted from a witness name. The `witness` and
     # `examining_attorney_label` params are retained for document metadata
     # / caller compatibility but no longer drive front-matter content.
-
-    # Body.
-    for wl in working_lines:
-        for (text, kind) in _body_lines_for(wl, body_width):
-            stream.append((text, kind))
-        stream.append(("", "blank"))   # blank line between utterances
+    stream = _build_formatted_stream(
+        working_lines,
+        proceedings_date=proceedings_date,
+        body_width=body_width,
+    )
 
     if not stream:
         return (ExportDocument(
@@ -350,6 +367,19 @@ def render_export_with_layout(
 
     # --- paginate using the Pagination Engine's model types -----------
     paginated = _paginate_formatted_stream(stream)
+
+    # Phase 1 migration: run the canonical paginator against an adapted
+    # RenderLine view of the same formatted stream. This is validation only;
+    # export authority remains the existing paginated stream above.
+    try:
+        _candidate, comparison = validate_formatted_stream(stream, paginated)
+        if not comparison.ok:
+            logger.warning(
+                "Phase 1 pagination validation differences: {}",
+                comparison.differences,
+            )
+    except Exception as exc:
+        logger.warning(f"Phase 1 pagination validation skipped: {exc}")
 
     # --- convert to ExportDocument ------------------------------------
     export_doc = _paginated_to_export_document(
